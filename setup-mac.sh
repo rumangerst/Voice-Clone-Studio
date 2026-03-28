@@ -135,7 +135,7 @@ pip install --upgrade pip
 echo ""
 echo "Installing PyTorch with MPS support..."
 echo "(This may take a while...)"
-pip install torch==2.9.1 torchaudio torchvision
+pip install torch==2.9.1 torchaudio==2.9.1 torchvision==0.24.1
 echo ""
 
 # Install requirements (skip GPU-specific packages)

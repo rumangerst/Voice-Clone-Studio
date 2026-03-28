@@ -291,10 +291,10 @@ source venv/bin/activate
 3. Install PyTorch:
 ```bash
 # Windows/Linux (NVIDIA GPU)
-pip install torch==2.9.1 torchaudio --index-url https://download.pytorch.org/whl/cu130
+pip install torch==2.9.1 torchaudio==2.9.1 --index-url https://download.pytorch.org/whl/cu130
 
 # macOS (MPS support built-in)
-pip install torch==2.9.1 torchaudio
+pip install torch==2.9.1 torchaudio==2.9.1
 ```
 
 4. Install dependencies:

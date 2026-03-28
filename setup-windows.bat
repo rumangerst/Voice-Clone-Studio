@@ -206,7 +206,7 @@ if "%CUDA_CHOICE%"=="3" set CUDA_VER=cu121
 if defined CUDA_VER (
     echo Installing PyTorch with !CUDA_VER!...
     echo This may take several minutes...
-    pip install torch==2.9.1 torchaudio torchvision --index-url https://download.pytorch.org/whl/!CUDA_VER!
+    pip install torch==2.9.1 torchaudio==2.9.1 torchvision==0.24.1 --index-url https://download.pytorch.org/whl/!CUDA_VER!
     if !errorlevel! neq 0 (
         echo ERROR: Failed to install PyTorch!
         pause
@@ -233,7 +233,7 @@ REM DeepFilterNet audio denoising (optional - requires Rust compiler for source 
 echo Installing DeepFilterNet (audio denoising)...
 pip install deepfilternet
 if %errorlevel% neq 0 (
-    echo WARNING: DeepFilterNet installation failed (requires Rust compiler to build from source).
+    echo WARNING: DeepFilterNet installation failed. Requires Rust compiler to build from source.
     echo Audio denoising will not be available, but all other features will work normally.
     echo To install later: Install Rust from https://rustup.rs then run: pip install deepfilternet
 )

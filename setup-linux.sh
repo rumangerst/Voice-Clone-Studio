@@ -107,7 +107,7 @@ pip install --upgrade pip
 echo ""
 echo "Installing PyTorch with CUDA 13.0 support..."
 echo "(This may take a while...)"
-pip install torch==2.9.1 torchaudio torchvision --index-url https://download.pytorch.org/whl/cu130
+pip install torch==2.9.1 torchaudio==2.9.1 torchvision==0.24.1 --index-url https://download.pytorch.org/whl/cu130
 
 # Install dependencies
 echo ""
