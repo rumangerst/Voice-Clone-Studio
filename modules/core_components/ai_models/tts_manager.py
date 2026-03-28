@@ -133,7 +133,7 @@ class TTSManager:
             dtype=get_dtype(),
             attn_implementation="eager",
         )
-        print(f"[OK] Model loaded with CUDA graphs acceleration")
+        print("[OK] Model loaded with CUDA graphs acceleration")
         return model
 
     def _check_and_unload_if_different(self, model_id):
@@ -863,11 +863,14 @@ class TTSManager:
 
             if is_faster:
                 # FasterQwen3TTS: pass ref_audio/ref_text directly
+                # xvec_only=False enables full ICL (reference audio in context)
+                # instead of just speaker embedding, matching standard Qwen3 quality
                 wavs, sr = model.generate_voice_clone(
                     text=text.strip(),
                     language=language if language != "Auto" else "Auto",
                     ref_audio=str(voice_sample_path),
                     ref_text=ref_text,
+                    xvec_only=False,
                     **gen_kwargs
                 )
             else:
@@ -1073,7 +1076,6 @@ class TTSManager:
               f"pred_head={'interpolated' if (base_pred and lora_pred and not self._trained_vv_pred_head_is_peft) else 'peft' if self._trained_vv_pred_head_is_peft else 'unchanged'}, "
               f"connectors={'interpolated' if (base_connectors and lora_connectors) else 'unchanged'})")
 
-
     def generate_with_trained_vibevoice(self, text, language, checkpoint_path,
                                         seed=-1, do_sample=False,
                                         temperature=1.0, top_k=50,
@@ -1142,7 +1144,7 @@ class TTSManager:
 
             print(f"Loading VibeVoice base model + LoRA from {Path(checkpoint_str).name}...")
             if progress_callback:
-                progress_callback(0.2, desc=f"Loading VibeVoice base model...")
+                progress_callback(0.2, desc="Loading VibeVoice base model...")
 
             from modules.vibevoice_tts.modular.modeling_vibevoice_inference import (
                 VibeVoiceForConditionalGenerationInference
@@ -1421,11 +1423,13 @@ class TTSManager:
 
         if is_faster and ref_audio:
             # FasterQwen3TTS: pass ref_audio/ref_text directly
+            # xvec_only=False enables full ICL for proper voice matching
             wavs, sr = model.generate_voice_clone(
                 text=text.strip(),
                 language=language if language != "Auto" else "Auto",
                 ref_audio=ref_audio,
                 ref_text=ref_text or "",
+                xvec_only=False,
                 do_sample=do_sample,
                 temperature=float(temperature),
                 top_k=int(top_k),

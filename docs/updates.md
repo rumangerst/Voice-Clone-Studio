@@ -2,10 +2,22 @@
 
 ## March 28, 2026
 
-#### Version 1.11.0 - bug fix, split paragraph in voice preset, added 7B support for VibeVoice Support
-- **7b support in Training** - Added support for training models using 7B
-- **Split Option** - Added Split audio by Paragraph in voice Preset
-- **Fixed Errors In Install Scripts** - Install was not properly specifiying what version of pytorchaudio to install
+#### Version 1.11.0 - VibeVoice 7B Training, Split by Paragraph & Bug Fixes
+
+**VibeVoice 7B Training**
+- **7B Base Model Support** - Train VibeVoice LoRA models using the 7B base for higher quality output (requires more VRAM)
+- **Base Model Selector** - New radio toggle in Train Model to choose between 1.5B and 7B before training
+- **Model Metadata** - Trained models now include `vcs_metadata.json` in the LoRA folder, recording which base model was used — transfers correctly when sharing models
+- **Interval Checkpoint Fix** - Save Interval checkpoints now correctly load on the matching base model instead of always defaulting to 1.5B
+
+**Voice Presets**
+- **Split by Paragraph** - New "Split by Paragraph" checkbox splits text by line breaks and generates a separate audio clip per paragraph with combined preview
+- **Multiline Text Fix** - Fixed pre-existing bug where multiline text only generated the first line with VibeVoice Trained models
+
+**Bug Fixes**
+- **Faster-Qwen3-TTS ICL Fix** - Fixed voice cloning quality degradation when using CUDA Graphs acceleration; the library defaulted to speaker-embedding-only mode (`xvec_only=True`) instead of full ICL with reference audio in context (thanks to [Mixomo](https://github.com/Mixomo) for identifying the root cause)
+- **Whisper Batch Transcribe Fix** - Fixed undefined variable (`size` → `asr_size`) in Prep Audio's Whisper batch transcription that caused crashes when using non-default Whisper model sizes
+- **Setup Script Fixes** - Install scripts now properly specify torchaudio version
 
 ## March 3, 2026
 #### Version 1.10.0 - VibeVoice Training, Trained Model Inference & Streaming Voice Presets

@@ -940,7 +940,9 @@ class ConversationTool(Tool):
                             repetition_penalty=line_rep_pen,
                             max_new_tokens=max_new_tokens
                         )
-                        if not is_faster:
+                        if is_faster:
+                            gen_kwargs['xvec_only'] = False
+                        else:
                             gen_kwargs['voice_prompt'] = voice_prompt
                         wavs, sr = model.generate_voice_clone(**gen_kwargs)
 

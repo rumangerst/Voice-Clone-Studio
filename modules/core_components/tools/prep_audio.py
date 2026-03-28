@@ -836,9 +836,9 @@ class PrepSamplesTool(Tool):
                 else:
                     if not asr_manager.whisper_available:
                         return "Whisper not available. Use VibeVoice ASR instead."
-                    progress(0.05, desc=f"Loading Whisper ({size or 'Medium'})...")
+                    progress(0.05, desc=f"Loading Whisper ({asr_size or 'Medium'})...")
                     try:
-                        model = asr_manager.get_whisper(size=size or "Medium")
+                        model = asr_manager.get_whisper(size=asr_size or "Medium")
                         status_log.append("Loaded Whisper model")
                     except ImportError as e:
                         return f"Error: {str(e)}"
