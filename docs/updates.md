@@ -2,10 +2,9 @@
 
 ## March 28, 2026
 
-#### Version 1.10.5 - Multiline split in Voice Preset
+#### Version 1.11.0 - bug fix, split paragraph in voice preset, added 7B support for VibeVoice Support
+- **7b support in Training** - Added support for training models using 7B
 - **Split Option** - Added Split audio by Paragraph in voice Preset
-
-#### Version 1.10.1 - Bug fixes
 - **Fixed Errors In Install Scripts** - Install was not properly specifiying what version of pytorchaudio to install
 
 ## March 3, 2026

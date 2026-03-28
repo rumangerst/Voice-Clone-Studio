@@ -900,7 +900,7 @@ def train_vibevoice_model(folder, speaker_name, batch_size, learning_rate,
                           diffusion_loss_weight, ce_loss_weight,
                           voice_prompt_drop_rate, train_diffusion_head,
                           gradient_accumulation_steps, warmup_steps,
-                          ema_decay,
+                          ema_decay, base_model_size,
                           user_config, datasets_dir, project_root,
                           play_completion_beep=None, progress=None):
     """Complete VibeVoice LoRA training workflow.
@@ -1068,9 +1068,12 @@ def train_vibevoice_model(folder, speaker_name, batch_size, learning_rate,
         status_log.append("[X] VibeVoice training script not found!")
         return "\n".join(status_log)
 
-    # Try FranckyB/VibeVoice-1.5B first (same weights, often already cached
-    # from voice cloning), then fall back to vibevoice/VibeVoice-1.5B.
-    base_model_candidates = ["FranckyB/VibeVoice-1.5B", "vibevoice/VibeVoice-1.5B"]
+    # Try FranckyB variant first (same weights, often already cached
+    # from voice cloning), then fall back to vibevoice org.
+    if base_model_size == "7B":
+        base_model_candidates = ["FranckyB/VibeVoice-Large", "vibevoice/VibeVoice-7B"]
+    else:
+        base_model_candidates = ["FranckyB/VibeVoice-1.5B", "vibevoice/VibeVoice-1.5B"]
     base_model_path = None
 
     # Check local models/ directory first
@@ -1098,7 +1101,7 @@ def train_vibevoice_model(folder, speaker_name, batch_size, learning_rate,
                 continue
 
     if not base_model_path:
-        status_log.append("[X] Failed to locate VibeVoice-1.5B base model. "
+        status_log.append(f"[X] Failed to locate VibeVoice-{base_model_size} base model. "
                           "Download it via Model Management or run voice cloning first.")
         return "\n".join(status_log)
 
@@ -1308,6 +1311,33 @@ def train_vibevoice_model(folder, speaker_name, batch_size, learning_rate,
         status_log.append("TRAINING COMPLETED SUCCESSFULLY!")
         status_log.append("=" * 60)
         status_log.append(f"LoRA model saved to: {output_dir}")
+
+        # Save metadata so inference knows which base model to load.
+        # Stored inside the lora/ folder so it travels with the model if shared.
+        import json as json_mod
+        metadata = {
+            "base_model_size": base_model_size or "1.5B",
+            "speaker_name": speaker_name.strip(),
+        }
+        lora_dir = output_dir / "lora"
+        if lora_dir.is_dir():
+            metadata_path = lora_dir / "vcs_metadata.json"
+        else:
+            metadata_path = output_dir / "vcs_metadata.json"
+        try:
+            metadata_path.write_text(json_mod.dumps(metadata, indent=2), encoding="utf-8")
+        except Exception:
+            pass  # Non-critical — inference will fall back to 1.5B
+
+        # Also write metadata into any interval checkpoint lora/ dirs
+        for ckpt in output_dir.glob("checkpoint-epoch-*/lora"):
+            try:
+                (ckpt / "vcs_metadata.json").write_text(
+                    json_mod.dumps(metadata, indent=2), encoding="utf-8"
+                )
+            except Exception:
+                pass
+
         status_log.append(f"Speaker name: {speaker_name.strip()}")
         status_log.append("")
         status_log.append("To use your trained model:")

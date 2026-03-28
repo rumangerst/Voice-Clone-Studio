@@ -1149,18 +1149,39 @@ class TTSManager:
             )
             from modules.vibevoice_tts.modular.lora_loading import load_lora_assets
 
+            # Determine which base model to load from checkpoint metadata.
+            # vcs_metadata.json lives inside the lora/ folder so it ships with shared models.
+            # Fall back to 1.5B for checkpoints trained before this feature.
+            base_model_size = "1.5B"
+            checkpoint_path = Path(checkpoint_str)
+            # Check lora/ subdir first (primary location), then checkpoint root
+            for candidate_dir in [checkpoint_path / "lora", checkpoint_path]:
+                meta_candidate = candidate_dir / "vcs_metadata.json"
+                if meta_candidate.exists():
+                    try:
+                        import json as _json
+                        meta = _json.loads(meta_candidate.read_text(encoding="utf-8"))
+                        base_model_size = meta.get("base_model_size", "1.5B")
+                    except Exception:
+                        pass
+                    break
+
             # Load base model — try FranckyB variant first (same weights,
             # often already cached from voice cloning)
             offline_mode = user_config.get("offline_mode", False)
             load_path = None
-            for candidate_id in ["FranckyB/VibeVoice-1.5B", "vibevoice/VibeVoice-1.5B"]:
+            if base_model_size == "7B":
+                candidates = ["FranckyB/VibeVoice-Large", "vibevoice/VibeVoice-7B"]
+            else:
+                candidates = ["FranckyB/VibeVoice-1.5B", "vibevoice/VibeVoice-1.5B"]
+            for candidate_id in candidates:
                 local_path = check_model_available_locally(candidate_id)
                 if local_path:
                     load_path = str(local_path)
                     break
             if not load_path:
                 # Fall back to HF hub resolution
-                load_path = "FranckyB/VibeVoice-1.5B"
+                load_path = candidates[0]
 
             # Pick attention implementation (flash_attention_2 for CUDA, sdpa otherwise)
             attn_candidates = get_attention_implementation(
