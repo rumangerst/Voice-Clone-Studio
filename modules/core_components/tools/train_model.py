@@ -70,8 +70,8 @@ class TrainModelTool(Tool):
 
                     components['refresh_train_folder_btn'] = gr.Button("Refresh Datasets", size="sm", visible=False)
 
-                    # Qwen3: needs reference audio selection (starts visible=True for DOM rendering)
-                    with gr.Group(visible=True) as qwen_ref_section:
+                    # Qwen3: needs reference audio selection
+                    with gr.Group(visible=is_qwen) as qwen_ref_section:
                         components['qwen_ref_section'] = qwen_ref_section
 
                         components['ref_audio_lister'] = FileLister(
@@ -110,11 +110,22 @@ class TrainModelTool(Tool):
                 # Right column - Training configuration
                 with gr.Column(scale=1):
                     gr.Markdown("### Training Configuration")
+
+                    saved_vv_base = _user_config.get("vv_base_model_size", "1.5B")
+                    with gr.Group(visible=not is_qwen) as vv_base_model_section:
+                        components['vv_base_model_section'] = vv_base_model_section
+                        components['vv_base_model_size'] = gr.Radio(
+                            choices=["1.5B", "7B"],
+                            value=saved_vv_base,
+                            label="Base Model",
+                            info="7B produces higher quality but requires more VRAM"
+                        )
+
                     with gr.Accordion("Training Settings", open=False) as train_accordion:
                         components['train_accordion'] = train_accordion
 
                         # --- Qwen3 training parameters ---
-                        with gr.Group(visible=True) as qwen_params_section:
+                        with gr.Group(visible=is_qwen) as qwen_params_section:
                             components['qwen_params_section'] = qwen_params_section
 
                             with gr.Row():
@@ -144,7 +155,7 @@ class TrainModelTool(Tool):
                                 )
 
                         # --- VibeVoice training parameters ---
-                        with gr.Group(visible=True) as vv_params_section:
+                        with gr.Group(visible=not is_qwen) as vv_params_section:
                             components['vv_params_section'] = vv_params_section
 
                             with gr.Row():
@@ -273,6 +284,7 @@ class TrainModelTool(Tool):
                 gr.update(visible=is_qwen),      # qwen_ref_section
                 gr.update(visible=is_qwen),      # qwen_params_section
                 gr.update(visible=not is_qwen),  # vv_params_section
+                gr.update(visible=not is_qwen),  # vv_base_model_section
             )
 
         components['model_type_radio'].change(
@@ -282,6 +294,7 @@ class TrainModelTool(Tool):
                 components['qwen_ref_section'],
                 components['qwen_params_section'],
                 components['vv_params_section'],
+                components['vv_base_model_section'],
             ]
         )
 
@@ -333,6 +346,13 @@ class TrainModelTool(Tool):
         components['model_type_radio'].change(
             lambda x: save_preference("train_model_type", x),
             inputs=[components['model_type_radio']],
+            outputs=[]
+        )
+
+        # Save VV base model size on change
+        components['vv_base_model_size'].change(
+            lambda x: save_preference("vv_base_model_size", x),
+            inputs=[components['vv_base_model_size']],
             outputs=[]
         )
 
@@ -429,6 +449,7 @@ class TrainModelTool(Tool):
         def handle_train_model_input(input_value, model_type, folder, ref_lister,
                                      qwen_batch_size, qwen_lr, qwen_epochs, qwen_save_interval,
                                      vv_batch_size, vv_lr, vv_epochs, vv_save_interval,
+                                     vv_base_model_size,
                                      vv_ddpm_batch_mul, vv_diffusion_loss_weight,
                                      vv_ce_loss_weight, vv_voice_prompt_drop,
                                      vv_train_diffusion_head, vv_gradient_accumulation,
@@ -457,7 +478,8 @@ class TrainModelTool(Tool):
                     vv_ddpm_batch_mul, vv_diffusion_loss_weight,
                     vv_ce_loss_weight, vv_voice_prompt_drop,
                     vv_train_diffusion_head, vv_gradient_accumulation,
-                    vv_warmup_steps, 0.99 if vv_ema_enabled else 0.0, progress
+                    vv_warmup_steps, 0.99 if vv_ema_enabled else 0.0,
+                    vv_base_model_size, progress
                 )
             else:
                 ref_audio = get_selected_ref_filename(ref_lister)
@@ -481,7 +503,7 @@ class TrainModelTool(Tool):
                 components['train_model_type_state'],
                 components['train_folder_dropdown'],
                 components['ref_audio_lister'],
-                # Qwen params
+                # Qwen3 params
                 components['qwen_batch_size'],
                 components['qwen_learning_rate'],
                 components['qwen_num_epochs'],
@@ -491,6 +513,8 @@ class TrainModelTool(Tool):
                 components['vv_learning_rate'],
                 components['vv_num_epochs'],
                 components['vv_save_interval'],
+                # VV-specific
+                components['vv_base_model_size'],
                 components['vv_ddpm_batch_mul'],
                 components['vv_diffusion_loss_weight'],
                 components['vv_ce_loss_weight'],
@@ -522,6 +546,7 @@ class TrainModelTool(Tool):
             components['qwen_ref_section'],
             components['qwen_params_section'],
             components['vv_params_section'],
+            components['vv_base_model_section'],
         ]
 
         components['train_tab'].select(

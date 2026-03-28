@@ -929,11 +929,11 @@ def build_shared_state(user_config, active_emotions, directories, constants, man
         'get_trained_vibevoice_models': lambda: get_trained_vibevoice_models_util(
             directories.get('OUTPUT_DIR').parent / user_config.get("trained_models_folder", "trained_models")
         ),
-        'train_vibevoice_model': lambda folder, speaker_name, batch_size, lr, epochs, save_interval, ddpm_batch_mul, diffusion_loss_weight, ce_loss_weight, voice_prompt_drop, train_diffusion_head, gradient_accumulation, warmup_steps, ema_decay, progress=None: train_vibevoice_model_util(
+        'train_vibevoice_model': lambda folder, speaker_name, batch_size, lr, epochs, save_interval, ddpm_batch_mul, diffusion_loss_weight, ce_loss_weight, voice_prompt_drop, train_diffusion_head, gradient_accumulation, warmup_steps, ema_decay, base_model_size, progress=None: train_vibevoice_model_util(
             folder, speaker_name, batch_size, lr, epochs,
             save_interval, ddpm_batch_mul, diffusion_loss_weight,
             ce_loss_weight, voice_prompt_drop, train_diffusion_head,
-            gradient_accumulation, warmup_steps, ema_decay,
+            gradient_accumulation, warmup_steps, ema_decay, base_model_size,
             user_config, directories.get('DATASETS_DIR'),
             directories.get('OUTPUT_DIR').parent,  # project_root
             play_completion_beep, progress
