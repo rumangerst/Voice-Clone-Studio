@@ -1256,9 +1256,21 @@ class VoicePresetsTool(Tool):
                     gr.update(),
                 )
 
+        def _clean_multiline_text(text):
+            """Collapse multiline text into a single line, ensuring punctuation between phrases."""
+            import re
+            lines = [line.strip() for line in re.split(r'\r\n|\r|\n', text) if line.strip()]
+            cleaned = []
+            for line in lines:
+                if line and line[-1] not in '.!?;:,':
+                    line += '.'
+                cleaned.append(line)
+            return ' '.join(cleaned)
+
         def generate_or_split(split_enabled, text, *rest_args, progress=gr.Progress()):
             """Route between single generation and split-by-paragraph generation."""
             if not split_enabled:
+                text = _clean_multiline_text(text) if text else text
                 return generate_with_voice_type(text, *rest_args, progress=progress)
             return split_preset_generation(text, *rest_args, progress=progress)
 
