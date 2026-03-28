@@ -420,6 +420,12 @@ class VoicePresetsTool(Tool):
 
                     components['custom_generate_btn'] = gr.Button("Generate Audio", variant="primary", size="lg")
 
+                    components['split_paragraph'] = gr.Checkbox(
+                        label="Split Audio by Paragraph",
+                        value=False,
+                        info="Generate a separate audio clip for each paragraph (separated by line breaks)"
+                    )
+
                     components['custom_output_audio'] = gr.Audio(
                         label="Generated Audio",
                         type="filepath"
@@ -892,7 +898,7 @@ class VoicePresetsTool(Tool):
                                      vv_streaming_voice=None,
                                      vv_streaming_cfg_scale=1.5, vv_streaming_ddpm_steps=20,
                                      progress=gr.Progress()):
-            """Generate audio with the selected voice type."""
+            "Generate audio with the selected voice type."""
             icl_sample_name = get_selected_icl_filename(icl_lister_value) if icl_lister_value else None
 
             if voice_type == "Qwen Speakers":
@@ -1154,6 +1160,108 @@ class VoicePresetsTool(Tool):
             )
         )
 
+        def split_preset_generation(text, *args, progress=gr.Progress()):
+            """Generate a separate audio clip for each paragraph, saving individually."""
+            from modules.core_components.audio_utils import make_stem_from_text, resolve_output_stem
+            import numpy as np
+            import random
+
+            if not text or not text.strip():
+                return None, "Please enter text to generate.", "", gr.update()
+
+            paragraphs = [p.strip() for p in text.strip().split("\n") if p.strip()]
+            if not paragraphs:
+                return None, "❌ No paragraphs found in text.", "", gr.update()
+
+            total = len(paragraphs)
+            if total == 1:
+                # Only one paragraph — just generate normally
+                return generate_with_voice_type(text, *args, progress=progress)
+
+            # Resolve output naming from first paragraph
+            base_stem = make_stem_from_text(paragraphs[0], sample_name="preset")
+            final_stem = resolve_output_stem(base_stem, OUTPUT_DIR, clip_count=total)
+
+            output_format = user_config.get("output_format", "wav")
+            manual_save = user_config.get("manual_save", False)
+            audio_segments = []
+            sr = 24000
+
+            for idx, para in enumerate(paragraphs):
+                clip_num = idx + 1
+                progress(idx / total, desc=f"Generating clip {clip_num}/{total}...")
+
+                try:
+                    audio_path, status, meta, _ = generate_with_voice_type(para, *args, progress=progress)
+                except Exception as e:
+                    import traceback
+                    traceback.print_exc()
+                    return None, f"❌ Error on paragraph {clip_num}: {str(e)}", "", gr.update()
+
+                if not audio_path:
+                    return None, f"❌ Failed on paragraph {clip_num}: {status}", "", gr.update()
+
+                # Read audio data from the generated file
+                audio_data, file_sr = sf.read(audio_path)
+                sr = file_sr
+                audio_segments.append(audio_data)
+
+                # Save individual clip
+                clip_stem = f"{final_stem}_{clip_num:02d}"
+                metadata = dedent(f"""\
+                    Generated: {datetime.now().strftime('%Y%m%d_%H%M%S')}
+                    Clip: {clip_num}/{total}
+                    Text: {' '.join(para.split())}
+                    """)
+                metadata_out = '\n'.join(line.lstrip() for line in metadata.lstrip().splitlines())
+                temp_path = save_audio_to_temp(audio_data, sr, TEMP_DIR, clip_stem)
+                if not manual_save:
+                    save_result_to_output(temp_path, OUTPUT_DIR, output_format, metadata_out)
+                print(f"  Clip {clip_num}/{total} saved: {clip_stem}")
+
+            # Build combined preview
+            combined_audio = np.concatenate(audio_segments)
+            preview_stem = f"{final_stem}_preview"
+            preview_metadata = dedent(f"""\
+                Generated: {datetime.now().strftime('%Y%m%d_%H%M%S')}
+                Clips: {total}
+                Type: Combined preview
+                """)
+            preview_metadata_out = '\n'.join(line.lstrip() for line in preview_metadata.lstrip().splitlines())
+
+            if manual_save:
+                preview_path = save_audio_to_temp(combined_audio, sr, TEMP_DIR, preview_stem)
+                clip_paths = [str(TEMP_DIR / f"{final_stem}_{i+1:02d}.wav") for i in range(total)]
+                batch_metadata = f"BATCH_SPLIT|{output_format}|{preview_metadata_out}\n" + "\n".join(clip_paths)
+                progress(1.0, desc="Done!")
+                if play_completion_beep:
+                    play_completion_beep()
+                return (
+                    str(preview_path),
+                    f"Generated {total} clips (combined preview).\nClick 'Save to Output' to save all clips.",
+                    batch_metadata,
+                    gr.update(interactive=True),
+                )
+            else:
+                # Also save combined preview
+                preview_path = save_audio_to_temp(combined_audio, sr, TEMP_DIR, preview_stem)
+                save_result_to_output(preview_path, OUTPUT_DIR, output_format, preview_metadata_out)
+                progress(1.0, desc="Done!")
+                if play_completion_beep:
+                    play_completion_beep()
+                return (
+                    str(TEMP_DIR / f"{preview_stem}.wav"),
+                    f"Saved {total} clips + combined preview to output folder.",
+                    "",
+                    gr.update(),
+                )
+
+        def generate_or_split(split_enabled, text, *rest_args, progress=gr.Progress()):
+            """Route between single generation and split-by-paragraph generation."""
+            if not split_enabled:
+                return generate_with_voice_type(text, *rest_args, progress=progress)
+            return split_preset_generation(text, *rest_args, progress=progress)
+
         def _disable_gen_btn():
             return gr.update(interactive=False)
 
@@ -1165,8 +1273,9 @@ class VoicePresetsTool(Tool):
         ).then(
             restore_fn, outputs=restore_outputs
         ).then(
-            generate_with_voice_type,
+            generate_or_split,
             inputs=[
+                components['split_paragraph'],
                 components['custom_text_input'], components['custom_language'], components['custom_speaker_dropdown'],
                 components['custom_instruct_input'], components['custom_seed'], components['custom_model_size'],
                 components['voice_type_radio'], components['custom_speaker_dropdown'], components['trained_model_dropdown'],
@@ -1194,11 +1303,30 @@ class VoicePresetsTool(Tool):
 
         # Save result button handler
         def save_result_handler(audio_path, metadata_text):
-            """Save the temp result to output folder in chosen format."""
+            """Save the temp result to output folder in chosen format.
+            Supports batch split saves when metadata starts with BATCH_SPLIT|."""
             if not audio_path:
                 return "❌ No audio to save.", gr.update()
             try:
                 output_format = user_config.get("output_format", "wav")
+
+                # Check for batch split metadata
+                if metadata_text and metadata_text.startswith("BATCH_SPLIT|"):
+                    header, rest = metadata_text.split("\n", 1)
+                    _, fmt, preview_meta = header.split("|", 2)
+                    clip_paths = [p.strip() for p in rest.strip().split("\n") if p.strip()]
+
+                    saved_count = 0
+                    for cp in clip_paths:
+                        cp_path = Path(cp)
+                        if cp_path.exists():
+                            save_result_to_output(cp_path, OUTPUT_DIR, fmt, None)
+                            saved_count += 1
+
+                    # Also save the combined preview
+                    save_result_to_output(audio_path, OUTPUT_DIR, fmt, preview_meta)
+                    return f"Saved {saved_count} clips + combined preview to output folder.", gr.update(interactive=False)
+
                 output_path = save_result_to_output(audio_path, OUTPUT_DIR, output_format, metadata_text or None)
                 return f"Saved to: {output_path.name}", gr.update(interactive=False)
             except Exception as e:
