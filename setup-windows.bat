@@ -199,14 +199,30 @@ REM Install PyTorch
 echo [5/7] Installing PyTorch...
 setlocal enabledelayedexpansion
 
-if "%CUDA_CHOICE%"=="1" set CUDA_VER=cu130
-if "%CUDA_CHOICE%"=="2" set CUDA_VER=cu128
-if "%CUDA_CHOICE%"=="3" set CUDA_VER=cu121
+REM Version matrix: each CUDA version requires matching torch/torchaudio/torchvision
+if "%CUDA_CHOICE%"=="1" (
+    set CUDA_VER=cu130
+    set TORCH_VER=2.9.1
+    set TORCHAUDIO_VER=2.9.1
+    set TORCHVISION_VER=0.24.1
+)
+if "%CUDA_CHOICE%"=="2" (
+    set CUDA_VER=cu128
+    set TORCH_VER=2.9.1
+    set TORCHAUDIO_VER=2.9.1
+    set TORCHVISION_VER=0.24.1
+)
+if "%CUDA_CHOICE%"=="3" (
+    set CUDA_VER=cu121
+    set TORCH_VER=2.5.1
+    set TORCHAUDIO_VER=2.5.1
+    set TORCHVISION_VER=0.20.1
+)
 
 if defined CUDA_VER (
-    echo Installing PyTorch with !CUDA_VER!...
+    echo Installing PyTorch !TORCH_VER! with !CUDA_VER!...
     echo This may take several minutes...
-    pip install torch==2.9.1 torchaudio==2.9.1 torchvision==0.24.1 --index-url https://download.pytorch.org/whl/!CUDA_VER!
+    pip install torch==!TORCH_VER! torchaudio==!TORCHAUDIO_VER! torchvision==!TORCHVISION_VER! --index-url https://download.pytorch.org/whl/!CUDA_VER!
     if !errorlevel! neq 0 (
         echo ERROR: Failed to install PyTorch!
         pause
