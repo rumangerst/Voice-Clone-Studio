@@ -754,6 +754,7 @@ def build_shared_state(user_config, active_emotions, directories, constants, man
         create_vibevoice_advanced_params,
         create_luxtts_advanced_params,
         create_chatterbox_advanced_params,
+        create_fish_speech_advanced_params,
         create_emotion_intensity_slider,
         create_pause_controls
     )
@@ -895,6 +896,7 @@ def build_shared_state(user_config, active_emotions, directories, constants, man
         'create_vibevoice_advanced_params': create_vibevoice_advanced_params,
         'create_luxtts_advanced_params': create_luxtts_advanced_params,
         'create_chatterbox_advanced_params': create_chatterbox_advanced_params,
+        'create_fish_speech_advanced_params': create_fish_speech_advanced_params,
         'create_emotion_intensity_slider': create_emotion_intensity_slider,
         'create_pause_controls': create_pause_controls,
 

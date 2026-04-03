@@ -76,6 +76,7 @@ from modules.core_components.tools import (
 
 # Add modules to path
 sys.path.insert(0, str(Path(__file__).parent / "modules"))
+sys.path.insert(0, str(Path(__file__).parent / "modules" / "fish_speech"))
 
 # ============================================================================
 # CONFIG & SETUP

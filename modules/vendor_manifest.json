@@ -30,5 +30,13 @@
         "vendored_date": "2026-02-10",
         "path": "modules/qwen_finetune",
         "notes": ""
+    },
+    "fish_speech": {
+        "source": "https://github.com/fishaudio/fish-speech",
+        "version": "2.0.0",
+        "vendored_date": "2025-07-17",
+        "path": "modules/fish_speech",
+        "license": "Fish Audio Research License (non-commercial free, commercial requires license)",
+        "notes": "Inference-only subset: models/text2semantic, content_sequence, conversation, tokenizer, configs/modded_dac_vq.yaml. loralib import made conditional. click import made conditional."
     }
 }

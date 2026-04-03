@@ -245,6 +245,10 @@ if %errorlevel% neq 0 (
     exit /b 1
 )
 
+REM Fish Speech S2 codec (installed with --no-deps to avoid protobuf conflict)
+echo Installing Fish Speech S2 codec...
+pip install --no-deps descript-audio-codec descript-audiotools >nul 2>&1
+
 REM DeepFilterNet audio denoising (optional - requires Rust compiler for source build)
 echo Installing DeepFilterNet (audio denoising)...
 pip install deepfilternet
@@ -295,12 +299,13 @@ echo Skipping LuxTTS installation.
 :luxtts_done
 echo.
 
-REM Qwen3 ASR (installed last as it updates transformers)
+REM Qwen3 ASR (installed with --no-deps to avoid transformers conflict with qwen-tts)
 if not "%QWEN3ASR_CHOICE%"=="1" goto :skip_qwen3asr
 
 echo.
 echo Installing Qwen3 ASR...
-pip install -U qwen-asr
+pip install nagisa soynlp qwen-omni-utils pytz flask
+pip install --no-deps qwen-asr
 if %errorlevel% neq 0 (
     echo WARNING: Qwen3 ASR installation failed.
     goto :skip_qwen3asr

@@ -1,5 +1,25 @@
 # Version History
 
+## April 3, 2026
+
+#### Version 1.12.0 - Fish Speech S2 Pro Integration
+
+**Fish Speech S2 Pro (6th TTS Engine)**
+- **New TTS Engine** - Integrated [Fish Speech S2 Pro](https://huggingface.co/fishaudio/s2-pro) (4B param DualAR Transformer + custom DAC codec) as a voice cloning engine
+- **Inline Expression Tags** - Fish Speech supports `[tag]` syntax for fine-grained control over speech delivery — embed tags like `[whisper]`, `[laughing]`, `[excited]`, `[pause]` directly in text
+- **15,000+ Tags** - Supports both predefined tags and free-form natural-language descriptions like `[whisper in small voice]`, `[professional broadcast tone]`, or `[pitch up]`
+- **Full Parameter Controls** - Temperature, Top-P, Top-K, Repetition Penalty, Max New Tokens, and Chunk Length sliders with ranges aligned to the official Fish Speech webui
+- **Automatic Tag Stripping** - When using other TTS engines, Fish Speech `[tags]` are automatically stripped from text so other models don't read them aloud
+- **Split by Paragraph** - Fully compatible with the existing Split by Paragraph feature for batch generation
+- **Auto-Download** - Model (~8 GB) downloads automatically from HuggingFace on first use with progress indication
+
+**Prompt Manager**
+- **Fish Speech LLM Preset** - New "TTS / Voice (Fish Speech)" system prompt preset instructs the LLM to generate text with inline `[tag]` expression markers, including a full tag reference and usage examples
+
+**Dependency Management**
+- **Clean Pip Resolution** - Resolved protobuf and transformers version conflicts using `--no-deps` install pattern for `descript-audio-codec` and `qwen-asr`
+- **Setup Scripts Updated** - All three setup scripts (Windows, Linux, macOS) updated with Fish Speech codec dependencies and conflict-free installs
+
 ## March 28, 2026
 
 #### Version 1.11.0 - VibeVoice 7B Training, Split by Paragraph & Bug Fixes

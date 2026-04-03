@@ -80,6 +80,12 @@ class TTSManager:
         self._chatterbox_vc_model = None
         self._chatterbox_mtl_model = None
 
+        # Fish Speech models
+        self._fish_speech_model = None
+        self._fish_speech_codec = None
+        self._fish_speech_decode_one_token = None
+        self._fish_speech_checkpoint_dir = None
+
         # Prompt cache
         self._voice_prompt_cache = {}
         self._luxtts_prompt_cache = {}
@@ -490,6 +496,185 @@ class TTSManager:
 
         return self._luxtts_model
 
+    def get_fish_speech(self):
+        """Load Fish Speech S2 Pro model and DAC codec.
+
+        Downloads the model from HuggingFace on first use. Subsequent calls
+        return cached instances. Respects offline_mode config.
+
+        Returns:
+            Tuple of (model, decode_one_token, codec)
+        """
+        if self._fish_speech_model is not None:
+            return self._fish_speech_model, self._fish_speech_decode_one_token, self._fish_speech_codec
+
+        self._check_and_unload_if_different("fish_speech")
+
+        import sys
+        from pathlib import Path as _Path
+
+        # Add vendored fish_speech to sys.path so 'from fish_speech.xxx' resolves
+        fish_speech_vendor_dir = str(_Path(__file__).parent.parent.parent / "fish_speech")
+        if fish_speech_vendor_dir not in sys.path:
+            sys.path.insert(0, fish_speech_vendor_dir)
+
+        from fish_speech.models.text2semantic.inference import (
+            init_model, load_codec_model
+        )
+
+        device = get_device()
+        dtype = get_dtype()
+
+        # Download or locate model via huggingface_hub
+        offline_mode = self.user_config.get("offline_mode", False)
+        repo_id = "fishaudio/s2-pro"
+
+        local_path = check_model_available_locally(repo_id)
+        if local_path:
+            checkpoint_dir = str(local_path)
+            print(f"Found local Fish Speech model: {checkpoint_dir}")
+        elif offline_mode:
+            raise RuntimeError(
+                f"Offline mode enabled but Fish Speech model not available locally: {repo_id}\n"
+                "Download the model first or disable offline mode in Settings."
+            )
+        else:
+            from huggingface_hub import snapshot_download
+            print(f"Downloading Fish Speech S2 Pro model (~8 GB): {repo_id}")
+            checkpoint_dir = snapshot_download(repo_id=repo_id)
+            print(f"Fish Speech model downloaded to: {checkpoint_dir}")
+
+        self._fish_speech_checkpoint_dir = checkpoint_dir
+
+        # Load the main transformer model
+        print("Loading Fish Speech S2 Pro model...")
+        model, decode_one_token = init_model(
+            checkpoint_path=checkpoint_dir,
+            device=device,
+            precision=dtype,
+            compile=False,
+        )
+        print(f"Fish Speech model loaded on {device}")
+
+        # Load the DAC codec for audio encoding/decoding
+        codec_path = _Path(checkpoint_dir) / "codec.pth"
+        if not codec_path.exists():
+            # Try alternate name
+            codec_path = _Path(checkpoint_dir) / "codec" / "model.pth"
+        if not codec_path.exists():
+            # Search for any codec-related file
+            for candidate in ["codec.pth", "codec.pt", "dac.pth"]:
+                p = _Path(checkpoint_dir) / candidate
+                if p.exists():
+                    codec_path = p
+                    break
+
+        print(f"Loading Fish Speech DAC codec from {codec_path}...")
+        codec = load_codec_model(
+            codec_checkpoint_path=str(codec_path),
+            device=device,
+            precision=dtype,
+        )
+        print(f"Fish Speech DAC codec loaded (sample rate: {codec.sample_rate}Hz)")
+
+        self._fish_speech_model = model
+        self._fish_speech_decode_one_token = decode_one_token
+        self._fish_speech_codec = codec
+
+        log_gpu_memory("After Fish Speech load")
+        return model, decode_one_token, codec
+
+    def generate_voice_clone_fish_speech(self, text, voice_sample_path,
+                                         ref_text="", seed=-1,
+                                         temperature=0.8, top_p=0.8, top_k=30,
+                                         repetition_penalty=1.1,
+                                         max_new_tokens=0, chunk_length=300,
+                                         progress_callback=None):
+        """Generate speech using Fish Speech S2 Pro.
+
+        Args:
+            text: Text to synthesize
+            voice_sample_path: Path to reference audio for voice cloning
+            ref_text: Transcript of the reference audio
+            seed: Random seed (-1 for random)
+            temperature: Sampling temperature (0.1-2.0)
+            top_p: Top-p nucleus sampling (0.1-1.0)
+            top_k: Top-k sampling (1-100)
+            repetition_penalty: Repetition penalty (1.0-2.0)
+            max_new_tokens: Max tokens to generate (0=auto)
+            chunk_length: Bytes per batch for generate_long
+            progress_callback: Optional Gradio progress callback
+
+        Returns:
+            Tuple of (audio_numpy_array, sample_rate)
+        """
+        import random
+        import numpy as np
+
+        if seed < 0:
+            seed = random.randint(0, 2147483647)
+        set_seed(seed)
+
+        model, decode_one_token, codec = self.get_fish_speech()
+        device = get_device()
+
+        import sys
+        from pathlib import Path as _Path
+        fish_speech_vendor_dir = str(_Path(__file__).parent.parent.parent / "fish_speech")
+        if fish_speech_vendor_dir not in sys.path:
+            sys.path.insert(0, fish_speech_vendor_dir)
+
+        from fish_speech.models.text2semantic.inference import (
+            encode_audio, generate_long, decode_to_audio
+        )
+
+        if progress_callback:
+            progress_callback(0.2, desc="Encoding reference audio...")
+
+        # Encode reference audio to VQ codes
+        prompt_tokens = encode_audio(str(voice_sample_path), codec, device)
+
+        if progress_callback:
+            progress_callback(0.4, desc="Generating speech...")
+
+        # Generate via the long-form generator
+        all_codes = []
+        for response in generate_long(
+            model=model,
+            device=device,
+            decode_one_token=decode_one_token,
+            text=text,
+            num_samples=1,
+            max_new_tokens=max_new_tokens,
+            top_p=top_p,
+            top_k=top_k,
+            repetition_penalty=repetition_penalty,
+            temperature=temperature,
+            compile=False,
+            iterative_prompt=True,
+            chunk_length=chunk_length,
+            prompt_text=[ref_text] if ref_text else None,
+            prompt_tokens=[prompt_tokens] if ref_text else None,
+        ):
+            if response.action == "sample":
+                all_codes.append(response.codes)
+            elif response.action == "next":
+                break
+
+        if not all_codes:
+            raise RuntimeError("Fish Speech generation produced no output codes.")
+
+        if progress_callback:
+            progress_callback(0.8, desc="Decoding audio...")
+
+        # Merge codes and decode to audio waveform
+        merged_codes = torch.cat(all_codes, dim=1)
+        audio_tensor = decode_to_audio(merged_codes.to(device), codec)
+        audio_np = audio_tensor.cpu().float().numpy()
+        sr = codec.sample_rate
+
+        return audio_np, sr
+
     def unload_all(self):
         """Unload all TTS models to free VRAM."""
         freed = []
@@ -533,6 +718,21 @@ class TTSManager:
             del self._chatterbox_mtl_model
             self._chatterbox_mtl_model = None
             freed.append("Chatterbox Multilingual")
+
+        if self._fish_speech_model is not None:
+            del self._fish_speech_model
+            self._fish_speech_model = None
+            freed.append("Fish Speech Model")
+
+        if self._fish_speech_codec is not None:
+            del self._fish_speech_codec
+            self._fish_speech_codec = None
+            freed.append("Fish Speech Codec")
+
+        if self._fish_speech_decode_one_token is not None:
+            self._fish_speech_decode_one_token = None
+
+        self._fish_speech_checkpoint_dir = None
 
         if self._trained_model is not None:
             del self._trained_model
@@ -2230,7 +2430,9 @@ class TTSManager:
         Returns:
             Tuple of (engine, model_size) e.g. ('qwen', '0.6B')
         """
-        if "LuxTTS" in model_selection:
+        if "Fish Speech" in model_selection:
+            return "fish_speech", "Pro"
+        elif "LuxTTS" in model_selection:
             return "luxtts", "Default"
         elif "VibeVoice" in model_selection:
             if "Small" in model_selection:
@@ -2256,7 +2458,7 @@ class TTSManager:
                                       qwen_params=None, vv_params=None,
                                       lux_params=None, cb_params=None,
                                       prompt_items=None, user_config=None,
-                                      progress_callback=None):
+                                      progress_callback=None, **kwargs):
         """Unified voice clone generation that dispatches to the correct engine.
 
         This is the single entry point for all voice clone generation
@@ -2354,6 +2556,19 @@ class TTSManager:
                     repetition_penalty=float(cp.get('repetition_penalty', 1.2)),
                     top_p=float(cp.get('top_p', 1.0)),
                 )
+        elif engine == "fish_speech":
+            fp = kwargs.get('fs_params', {})
+            return self.generate_voice_clone_fish_speech(
+                text=text, voice_sample_path=sample_wav_path,
+                ref_text=sample_ref_text, seed=seed,
+                temperature=float(fp.get('temperature', 0.8)),
+                top_p=float(fp.get('top_p', 0.8)),
+                top_k=int(fp.get('top_k', 30)),
+                repetition_penalty=float(fp.get('repetition_penalty', 1.1)),
+                max_new_tokens=int(fp.get('max_new_tokens', 0)),
+                chunk_length=int(fp.get('chunk_length', 300)),
+                progress_callback=progress_callback,
+            )
         else:
             raise ValueError(f"Unknown engine: {engine}")
 

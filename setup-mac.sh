@@ -160,6 +160,11 @@ if [ -f "requirements.txt" ]; then
     echo "Installing Chatterbox Voice Conversion dependencies..."
     pip install s3tokenizer conformer
 
+    # Fish Speech S2 codec (installed with --no-deps to avoid protobuf conflict)
+    echo ""
+    echo "Installing Fish Speech S2 codec..."
+    pip install --no-deps descript-audio-codec descript-audiotools
+
     # Install onnxruntime (CPU version, not GPU)
     echo ""
     echo "Installing ONNX Runtime (CPU)..."
@@ -219,11 +224,12 @@ else
     echo "Skipping LuxTTS installation."
 fi
 
-# Qwen3 ASR (installed last as it updates transformers)
+# Qwen3 ASR (installed with --no-deps to avoid transformers conflict with qwen-tts)
 if [[ "$INSTALL_QWEN3ASR" =~ ^[Yy]$ ]]; then
     echo ""
     echo "Installing Qwen3 ASR..."
-    if pip install -U qwen-asr; then
+    pip install nagisa soynlp qwen-omni-utils pytz flask
+    if pip install --no-deps qwen-asr; then
         echo "Qwen3 ASR installed successfully!"
     else
         echo "Qwen3 ASR installation failed."

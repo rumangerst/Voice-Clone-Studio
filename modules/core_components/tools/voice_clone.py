@@ -13,6 +13,7 @@ if __name__ == "__main__":
     sys.path.insert(0, str(project_root / "modules"))
 
 import gradio as gr
+import re
 import soundfile as sf
 import torch
 import random
@@ -248,6 +249,21 @@ class VoiceCloneTool(Tool):
                             label="Language (Chatterbox Multilingual)",
                         )
 
+                    # Fish Speech Advanced Parameters
+                    create_fish_speech_advanced_params = shared_state['create_fish_speech_advanced_params']
+                    components['fs_params_col'] = gr.Column(visible=True)
+                    with components['fs_params_col']:
+                        fs_params = create_fish_speech_advanced_params(
+                            visible=True
+                        )
+                    components['fs_params_accordion'] = fs_params['accordion']
+                    components['fs_temperature'] = fs_params['temperature']
+                    components['fs_top_p'] = fs_params['top_p']
+                    components['fs_top_k'] = fs_params['top_k']
+                    components['fs_repetition_penalty'] = fs_params['repetition_penalty']
+                    components['fs_max_new_tokens'] = fs_params['max_new_tokens']
+                    components['fs_chunk_length'] = fs_params['chunk_length']
+
                     components['split_paragraph'] = gr.Checkbox(
                         label="Split Audio by Paragraph",
                         value=False,
@@ -341,6 +357,14 @@ class VoiceCloneTool(Tool):
                 ('cb_repetition_penalty', 'repetition_penalty'),
                 ('cb_top_p', 'top_p'),
             ],
+            'fish_speech': [
+                ('fs_temperature', 'temperature'),
+                ('fs_top_p', 'top_p'),
+                ('fs_top_k', 'top_k'),
+                ('fs_repetition_penalty', 'repetition_penalty'),
+                ('fs_max_new_tokens', 'max_new_tokens'),
+                ('fs_chunk_length', 'chunk_length'),
+            ],
         }
         wire_param_persistence(components, _user_config, param_map)
 
@@ -367,6 +391,8 @@ class VoiceCloneTool(Tool):
                                    lux_rms=0.01, lux_ref_duration=30, lux_guidance_scale=3.0,
                                    cb_exaggeration=0.5, cb_cfg_weight=0.5, cb_temperature=0.8,
                                    cb_repetition_penalty=1.2, cb_top_p=1.0, cb_language="English",
+                                   fs_temperature=0.8, fs_top_p=0.8, fs_top_k=30,
+                                   fs_repetition_penalty=1.1, fs_max_new_tokens=0, fs_chunk_length=300,
                                    progress=gr.Progress()):
             """Generate audio using voice cloning via unified engine dispatch."""
             from modules.core_components.audio_utils import make_stem_from_text, resolve_output_stem
@@ -429,6 +455,11 @@ class VoiceCloneTool(Tool):
                     'repetition_penalty': float(cb_repetition_penalty),
                     'top_p': float(cb_top_p), 'language': cb_language,
                 }
+                fs_params = {
+                    'temperature': float(fs_temperature), 'top_p': float(fs_top_p),
+                    'top_k': int(fs_top_k), 'repetition_penalty': float(fs_repetition_penalty),
+                    'max_new_tokens': int(fs_max_new_tokens), 'chunk_length': int(fs_chunk_length),
+                }
 
                 # Qwen: pre-load prompt (skip if CUDA graphs — handled internally)
                 prompt_items = None
@@ -450,13 +481,19 @@ class VoiceCloneTool(Tool):
                 else:
                     progress(0.1, desc=f"Loading {model_selection}...")
 
+                # Strip Fish Speech [tags] for non-Fish engines
+                gen_text = text_to_generate
+                if engine != "fish_speech":
+                    gen_text = re.sub(r'\[.*?\]\s*', '', gen_text).strip()
+
                 # Dispatch to the correct engine
                 audio_data, sr = tts_manager.generate_voice_clone_dispatch(
-                    text=text_to_generate, engine=engine, model_size=model_size,
+                    text=gen_text, engine=engine, model_size=model_size,
                     sample_wav_path=sample["wav_path"], sample_name=sample_name,
                     sample_ref_text=sample_ref_text, language=language, seed=actual_seed,
                     qwen_params=qwen_params, vv_params=vv_params,
                     lux_params=lux_params, cb_params=cb_params,
+                    fs_params=fs_params,
                     prompt_items=prompt_items, user_config=_user_config,
                     progress_callback=progress,
                 )
@@ -473,6 +510,7 @@ class VoiceCloneTool(Tool):
                     'vibevoice': f"VibeVoice-{model_size}",
                     'luxtts': "LuxTTS",
                     'chatterbox': "Chatterbox Multilingual" if model_size == "Multilingual" else "Chatterbox",
+                    'fish_speech': "Fish Speech S2 Pro",
                 }
                 engine_display = engine_display_map.get(engine, model_selection)
 
@@ -646,6 +684,8 @@ class VoiceCloneTool(Tool):
                                      lux_rms, lux_ref_duration, lux_guidance_scale,
                                      cb_exaggeration, cb_cfg_weight, cb_temperature,
                                      cb_repetition_penalty, cb_top_p, cb_language,
+                                     fs_temperature, fs_top_p, fs_top_k,
+                                     fs_repetition_penalty, fs_max_new_tokens, fs_chunk_length,
                                      progress=gr.Progress()):
             """Generate a separate audio clip for each paragraph with auto-naming."""
             from modules.core_components.audio_utils import make_stem_from_text, resolve_output_stem
@@ -716,6 +756,11 @@ class VoiceCloneTool(Tool):
                     'repetition_penalty': float(cb_repetition_penalty),
                     'top_p': float(cb_top_p), 'language': cb_language,
                 }
+                fs_params = {
+                    'temperature': float(fs_temperature), 'top_p': float(fs_top_p),
+                    'top_k': int(fs_top_k), 'repetition_penalty': float(fs_repetition_penalty),
+                    'max_new_tokens': int(fs_max_new_tokens), 'chunk_length': int(fs_chunk_length),
+                }
 
                 # Pre-load model once
                 prompt_items = None
@@ -736,6 +781,8 @@ class VoiceCloneTool(Tool):
                     progress(0.05, desc="Loading LuxTTS model...")
                 elif engine == "chatterbox":
                     progress(0.05, desc="Loading Chatterbox model...")
+                elif engine == "fish_speech":
+                    progress(0.05, desc="Loading Fish Speech S2 Pro model...")
 
                 output_format = _user_config.get("output_format", "wav")
                 manual_save = _user_config.get("manual_save", False)
@@ -745,12 +792,18 @@ class VoiceCloneTool(Tool):
                     clip_num = idx + 1
                     progress(idx / total, desc=f"Generating clip {clip_num}/{total}...")
 
+                    # Strip Fish Speech [tags] for non-Fish engines
+                    gen_para = para
+                    if engine != "fish_speech":
+                        gen_para = re.sub(r'\[.*?\]\s*', '', gen_para).strip()
+
                     audio_data, sr = tts_manager.generate_voice_clone_dispatch(
-                        text=para, engine=engine, model_size=model_size,
+                        text=gen_para, engine=engine, model_size=model_size,
                         sample_wav_path=sample["wav_path"], sample_name=sample_name,
                         sample_ref_text=sample_ref_text, language=language, seed=actual_seed,
                         qwen_params=qwen_params, vv_params=vv_params,
                         lux_params=lux_params, cb_params=cb_params,
+                        fs_params=fs_params,
                         prompt_items=prompt_items, user_config=_user_config,
                         progress_callback=progress,
                     )
@@ -837,6 +890,8 @@ class VoiceCloneTool(Tool):
             components['luxtts_rms'], components['luxtts_ref_duration'], components['luxtts_guidance_scale'],
             components['cb_exaggeration'], components['cb_cfg_weight'], components['cb_temperature'],
             components['cb_repetition_penalty'], components['cb_top_p'], components['cb_language_dropdown'],
+            components['fs_temperature'], components['fs_top_p'], components['fs_top_k'],
+            components['fs_repetition_penalty'], components['fs_max_new_tokens'], components['fs_chunk_length'],
         ]
         gen_outputs = [components['output_audio'], components['clone_status'], components['_result_metadata'], components['save_result_btn']]
 
@@ -914,12 +969,13 @@ class VoiceCloneTool(Tool):
             is_vv = "VibeVoice" in model_selection
             is_lux = "LuxTTS" in model_selection
             is_cb = "Chatterbox" in model_selection
-            return gr.update(visible=is_qwen), gr.update(visible=is_vv), gr.update(visible=is_lux), gr.update(visible=is_cb)
+            is_fs = "Fish Speech" in model_selection
+            return gr.update(visible=is_qwen), gr.update(visible=is_vv), gr.update(visible=is_lux), gr.update(visible=is_cb), gr.update(visible=is_fs)
 
         components['clone_model_dropdown'].change(
             toggle_engine_params,
             inputs=[components['clone_model_dropdown']],
-            outputs=[components['qwen_params_col'], components['vv_params_col'], components['luxtts_params_col'], components['cb_params_col']]
+            outputs=[components['qwen_params_col'], components['vv_params_col'], components['luxtts_params_col'], components['cb_params_col'], components['fs_params_col']]
         )
 
         # Save voice clone model selection
@@ -933,7 +989,7 @@ class VoiceCloneTool(Tool):
         components['voice_clone_tab'].select(
             toggle_engine_params,
             inputs=[components['clone_model_dropdown']],
-            outputs=[components['qwen_params_col'], components['vv_params_col'], components['luxtts_params_col'], components['cb_params_col']]
+            outputs=[components['qwen_params_col'], components['vv_params_col'], components['luxtts_params_col'], components['cb_params_col'], components['fs_params_col']]
         ).then(
             toggle_language_visibility,
             inputs=[components['clone_model_dropdown']],
@@ -983,7 +1039,7 @@ class VoiceCloneTool(Tool):
             app.load(
                 toggle_engine_params,
                 inputs=[components['clone_model_dropdown']],
-                outputs=[components['qwen_params_col'], components['vv_params_col'], components['luxtts_params_col'], components['cb_params_col']]
+                outputs=[components['qwen_params_col'], components['vv_params_col'], components['luxtts_params_col'], components['cb_params_col'], components['fs_params_col']]
             )
             app.load(
                 toggle_language_visibility,

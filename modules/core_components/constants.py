@@ -72,6 +72,7 @@ VOICE_CLONE_OPTIONS = [
     "LuxTTS - Default",
     "Chatterbox - Default",
     "Chatterbox - Multilingual",
+    "Fish Speech - S2 Pro",
 ]
 
 # Default to Large models for better quality (static fallback)
@@ -103,6 +104,12 @@ TTS_ENGINES = {
         "choices": ["Chatterbox - Default", "Chatterbox - Multilingual"],
         "default_enabled": True,
         "import_check": ("modules.chatterbox", "ChatterboxTTS"),
+    },
+    "FishSpeech": {
+        "label": "Fish Speech S2",
+        "choices": ["Fish Speech - S2 Pro"],
+        "default_enabled": True,
+        "import_check": ("fish_speech.models.text2semantic.inference", "init_model"),
     },
 }
 
@@ -352,6 +359,8 @@ SUPPORTED_MODELS = {
     "whisper",
     # VibeVoice Streaming model
     "vibevoice-streaming-0.5b",
+    # Fish Speech models
+    "fish-speech-s2-pro",
 }
 
 # ============================================================================
@@ -486,6 +495,19 @@ LUXTTS_GENERATION_DEFAULTS = {
 # LuxTTS audio is 48kHz (higher quality than standard 24kHz)
 LUXTTS_SAMPLE_RATE = 48000
 
+# Fish Speech S2 Generation Defaults (matching official webui)
+FISH_SPEECH_GENERATION_DEFAULTS = {
+    "temperature": 0.8,
+    "top_p": 0.8,
+    "top_k": 30,
+    "repetition_penalty": 1.1,
+    "max_new_tokens": 0,  # 0 = auto (model max length)
+    "chunk_length": 300,
+}
+
+# Fish Speech audio sample rate (determined by DAC codec, typically 24kHz)
+FISH_SPEECH_SAMPLE_RATE = 24000
+
 # Chatterbox Generation Defaults
 CHATTERBOX_GENERATION_DEFAULTS = {
     "exaggeration": 0.5,
@@ -518,7 +540,7 @@ CHATTERBOX_LANG_TO_CODE = {
 # ============================================================================
 
 APP_TITLE = "Voice Clone Studio"
-APP_SUBTITLE = "Powered by Qwen3-TTS, VibeVoice, LuxTTS, Chatterbox and Whisper"
+APP_SUBTITLE = "Powered by Qwen3-TTS, VibeVoice, LuxTTS, Chatterbox, Fish Speech and Whisper"
 
 # Port assignments for standalone tool testing
 TOOL_PORTS = {

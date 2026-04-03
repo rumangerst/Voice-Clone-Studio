@@ -1,8 +1,8 @@
 # Voice Clone Studio
 
-A multi-model, modular Gradio-based web UI for voice cloning, voice design, multi-speaker conversation, voice conversion, voice training and sound effects. Basically, One app, many engines, to tinker with all of them without juggling separate repos or setups.  Powered by [VibeVoice](https://github.com/microsoft/VibeVoice), [Qwen3-TTS](https://github.com/QwenLM/Qwen3-TTS), [LuxTTS](https://github.com/ysharma3501/LuxTTS), [Chatterbox](https://github.com/resemble-ai/chatterbox) and [MMAudio](https://github.com/hkchengrex/MMAudio). Supports [Qwen3-ASR](https://github.com/QwenLM/Qwen3-ASR), [VibeVoice-ASR](https://github.com/microsoft/VibeVoice/blob/main/docs/vibevoice-asr.md) and [Whisper](https://github.com/openai/whisper) for automatic transcription. As well as [llama.cpp](https://github.com/ggerganov/llama.cpp) and [Ollama](https://ollama.com/) for Prompt Generation and a Prompt Saving, based on [ComfyUI Prompt-Manager](https://github.com/FranckyB/ComfyUI-Prompt-Manager)
+A multi-model, modular Gradio-based web UI for voice cloning, voice design, multi-speaker conversation, voice conversion, voice training and sound effects. Basically, One app, many engines, to tinker with all of them without juggling separate repos or setups.  Powered by [VibeVoice](https://github.com/microsoft/VibeVoice), [Qwen3-TTS](https://github.com/QwenLM/Qwen3-TTS), [LuxTTS](https://github.com/ysharma3501/LuxTTS), [Chatterbox](https://github.com/resemble-ai/chatterbox), [Fish Speech](https://github.com/fishaudio/fish-speech) and [MMAudio](https://github.com/hkchengrex/MMAudio). Supports [Qwen3-ASR](https://github.com/QwenLM/Qwen3-ASR), [VibeVoice-ASR](https://github.com/microsoft/VibeVoice/blob/main/docs/vibevoice-asr.md) and [Whisper](https://github.com/openai/whisper) for automatic transcription. As well as [llama.cpp](https://github.com/ggerganov/llama.cpp) and [Ollama](https://ollama.com/) for Prompt Generation and a Prompt Saving, based on [ComfyUI Prompt-Manager](https://github.com/FranckyB/ComfyUI-Prompt-Manager)
 
-<img src="https://img.shields.io/badge/VibeVoice-TTS-green" alt="VibeVoice TTS"> <img src="https://img.shields.io/badge/VibeVoice-ASR-green" alt="VibeVoice ASR"> <img src="https://img.shields.io/badge/Qwen3-TTS-blue" alt="Qwen3-TTS"> <img src="https://img.shields.io/badge/Qwen3-ASR-blue" alt="Qwen3-ASR"> <img src="https://img.shields.io/badge/LuxTTS-TTS-orange" alt="LuxTTS"> <img src="https://img.shields.io/badge/Chatterbox-TTS-red" alt="Chatterbox-TTS"> <img src="https://img.shields.io/badge/Whisper-yellow" alt="Whisper"> <img src="https://img.shields.io/badge/MMAudio-SFX-purple" alt="MMAudio">
+<img src="https://img.shields.io/badge/VibeVoice-TTS-green" alt="VibeVoice TTS"> <img src="https://img.shields.io/badge/VibeVoice-ASR-green" alt="VibeVoice ASR"> <img src="https://img.shields.io/badge/Qwen3-TTS-blue" alt="Qwen3-TTS"> <img src="https://img.shields.io/badge/Qwen3-ASR-blue" alt="Qwen3-ASR"> <img src="https://img.shields.io/badge/LuxTTS-TTS-orange" alt="LuxTTS"> <img src="https://img.shields.io/badge/Chatterbox-TTS-red" alt="Chatterbox-TTS"> <img src="https://img.shields.io/badge/Fish_Speech-TTS-teal" alt="Fish Speech TTS"> <img src="https://img.shields.io/badge/Whisper-yellow" alt="Whisper"> <img src="https://img.shields.io/badge/MMAudio-SFX-purple" alt="MMAudio">
 
 <a href="docs/preview.png"><img src="docs/preview.png" alt="Voice Clone Studio Preview" width="600"></a>
 
@@ -15,7 +15,9 @@ Voice Clone Studio is fully modular. The main file dynamically loads self-contai
 ### Voice Clone
 Clone voices from your own audio samples. Provide a short reference audio clip with its transcript, and generate new speech in that voice.
 
-- **Multiple engines** - Qwen3-TTS (0.6B/1.7B) or VibeVoice (1.5B/Large/Large-4bit)
+- **Multiple engines** - Qwen3-TTS (0.6B/1.7B), VibeVoice (1.5B/Large/Large-4bit), LuxTTS, Chatterbox, and Fish Speech S2 Pro (4B)
+- **Fish Speech Expression Tags** - Embed `[tag]` markers like `[whisper]`, `[laughing]`, `[excited]` directly in text for fine-grained delivery control (15,000+ supported tags)
+- **Automatic Tag Stripping** - Fish Speech `[tags]` are automatically removed when using other engines, so the same text works everywhere
 - **Voice prompt caching** - First generation processes the sample, subsequent ones are instant
 - **Seed control** - Reproducible results with saved seeds
 - **Emotion presets** - 40+ emotion presets with adjustable intensity
@@ -164,7 +166,7 @@ Save, browse, and generate text prompts for your TTS sessions. Includes a built-
 - **Prompt Hub** - Every generation tool has a built-in Prompt Loader for one-click access to saved prompts without switching tabs
 - **LLM Generation** - Generate prompts locally using Qwen3 language models via llama.cpp or Ollama (no cloud API needed)
 - **Ollama Support** - Use any model from your local Ollama installation as an alternative to llama.cpp
-- **System Prompt Presets** - Built-in presets for TTS/Voice and Sound Design/SFX workflows, or write your own
+- **System Prompt Presets** - Built-in presets for TTS/Voice, TTS/Voice (Fish Speech) with `[tag]` instructions, and Sound Design/SFX workflows, or write your own
 - **Model Auto-Download** - Download Qwen3-4B (~4.8GB) or Qwen3-8B (~8.5GB) GGUF models directly from HuggingFace
 - **Custom Models** - Drop any `.gguf` file into `models/llama/` to use your own models
 - **Automatic Server Management** - llama.cpp server starts/stops automatically, cleaned up on exit or Clear VRAM
@@ -491,6 +493,7 @@ Each tab lets you choose between model sizes:
 | **LuxTTS** | Large | Voice cloning with speaker encoder |
 | **VibeVoice-TTS** | Small, Large | Voice cloning & Long-form multi-speaker (up to 90 min) |
 | **Chatterbox** | TTS, Multilingual | Speech-to-speech voice conversion |
+| **Fish Speech S2 Pro** | 4B | Voice cloning with inline expression tags |
 | **VibeVoice-ASR** | Large | Audio transcription |
 | **Whisper** | Medium | Audio transcription |
 | **MMAudio** | Medium, Large v2 | Sound effects generation (text & video to audio) |

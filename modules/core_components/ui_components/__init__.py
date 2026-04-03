@@ -560,6 +560,103 @@ def create_chatterbox_advanced_params(
     return components
 
 
+def create_fish_speech_advanced_params(
+    initial_temperature=0.8,
+    initial_top_p=0.8,
+    initial_top_k=30,
+    initial_repetition_penalty=1.1,
+    initial_max_new_tokens=0,
+    initial_chunk_length=300,
+    visible=False
+):
+    """
+    Reusable Fish Speech S2 advanced parameters accordion.
+
+    Args:
+        initial_temperature: Sampling temperature
+        initial_top_p: Top-p nucleus sampling
+        initial_top_k: Top-k sampling
+        initial_repetition_penalty: Repetition penalty
+        initial_max_new_tokens: Max tokens (0 = auto)
+        initial_chunk_length: Bytes per batch
+        visible: Make accordion visible
+
+    Returns:
+        dict with component references
+    """
+    components = {}
+
+    with gr.Accordion("Fish Speech Advanced Parameters", open=False, visible=visible) as accordion:
+        with gr.Row():
+            components['temperature'] = gr.Slider(
+                minimum=0.7,
+                maximum=1.0,
+                value=initial_temperature,
+                step=0.01,
+                label="Temperature",
+                info="Sampling temperature (lower = more stable)"
+            )
+            components['top_p'] = gr.Slider(
+                minimum=0.7,
+                maximum=0.95,
+                value=initial_top_p,
+                step=0.01,
+                label="Top-p",
+                info="Nucleus sampling threshold"
+            )
+
+        with gr.Row():
+            components['top_k'] = gr.Slider(
+                minimum=1,
+                maximum=100,
+                value=initial_top_k,
+                step=1,
+                label="Top-k",
+                info="Top-k sampling"
+            )
+            components['repetition_penalty'] = gr.Slider(
+                minimum=1.0,
+                maximum=1.2,
+                value=initial_repetition_penalty,
+                step=0.01,
+                label="Repetition Penalty",
+                info="Higher = less repetition"
+            )
+
+        with gr.Row():
+            components['max_new_tokens'] = gr.Slider(
+                minimum=0,
+                maximum=4096,
+                value=initial_max_new_tokens,
+                step=64,
+                label="Max New Tokens",
+                info="0 = auto (model max length)"
+            )
+            components['chunk_length'] = gr.Slider(
+                minimum=100,
+                maximum=512,
+                value=initial_chunk_length,
+                step=10,
+                label="Chunk Length",
+                info="Bytes per batch for long text generation"
+            )
+
+        gr.Markdown(
+            "**Emotion tags:** Use inline `[tag]` syntax anywhere in your text to control prosody and emotion. "
+            "Supports 15,000+ tags including free-form descriptions.\n\n"
+            "**Common tags:** "
+            "`[pause]` `[emphasis]` `[laughing]` `[excited]` `[angry]` `[whisper]` `[sad]` "
+            "`[singing]` `[loud]` `[low voice]` `[sigh]` `[screaming]` `[shouting]` "
+            "`[surprised]` `[delight]` `[clearing throat]` `[chuckle]` `[echo]`\n\n"
+            "**Example:** `I can't believe it! [excited] This is amazing! [whisper] Don't tell anyone though.`",
+            visible=True
+        )
+
+    components['accordion'] = accordion
+
+    return components
+
+
 def create_pause_controls(
     initial_linebreak=0.5,
     initial_period=0.4,

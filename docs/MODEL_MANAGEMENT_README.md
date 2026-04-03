@@ -38,6 +38,10 @@ voice_design_model = tts_manager.get_qwen3_voice_design()
 custom_voice_model = tts_manager.get_qwen3_custom_voice(size="0.6B")
 vibevoice_model = tts_manager.get_vibevoice_tts(size="1.5B")
 
+# Fish Speech S2 Pro (4B model, ~24GB VRAM, 80+ languages)
+# Vendored in modules/fish_speech/ — Fish Audio Research License
+fish_speech = tts_manager.get_fish_speech()
+
 # Unload all when done
 tts_manager.unload_all()
 
@@ -98,6 +102,7 @@ TTS Model Manager:
 - `get_qwen3_voice_design()` - Load Qwen3 VoiceDesign
 - `get_qwen3_custom_voice(size)` - Load Qwen3 CustomVoice
 - `get_vibevoice_tts(size)` - Load VibeVoice TTS
+- `get_fish_speech()` - Load Fish Speech S2 Pro
 - `unload_all()` - Free all VRAM
 - `compute_sample_hash(wav_path, ref_text)` - Hash sample
 - `load_voice_prompt(sample_name, hash, model_size)` - Load cached prompt
@@ -196,6 +201,30 @@ User configuration (`config.json`) controls:
 ✅ **Extensible** - Add new models without touching tools  
 ✅ **Optimized** - Smart VRAM management  
 ✅ **Configurable** - User control over model behavior  
+
+## Fish Speech S2 Pro
+
+Fish Speech S2 Pro is a 4B parameter TTS model supporting 80+ languages with inline emotion tags.
+
+**Details:**
+- Model: `fishaudio/s2-pro` on HuggingFace (~24GB VRAM)
+- Architecture: DualARTransformer + custom DAC audio codec
+- License: Fish Audio Research License (free for non-commercial use, commercial requires license)
+- Vendored source: `modules/fish_speech/` (inference-only subset)
+- Dependencies: `descript-audio-codec`, `hydra-core`, `loguru`
+
+**Emotion Tags:**
+Fish Speech uses inline tags in text: `[happy]Hello![/happy]`, `[sad]Oh no[/sad]`
+
+**Generation Parameters:**
+- `temperature` (0.7-1.0, default 0.8)
+- `top_p` (0.7-0.95, default 0.8)
+- `top_k` (1-100, default 30)
+- `repetition_penalty` (1.0-1.2, default 1.1)
+- `max_new_tokens` (0=auto, up to 4096)
+- `chunk_length` (100-512, default 300)
+
+**Note:** The protobuf version conflict between `descript-audiotools` (pins `<3.20`) and `onnxruntime` (needs `>=4.25.1`) is resolved by force-upgrading protobuf to 5.x+ after installation. Both packages work at runtime despite the declared constraint.
 
 ## Future Improvements
 
