@@ -4,6 +4,7 @@ TTS Model Manager
 Centralized management for all TTS models (Qwen3, VibeVoice, etc.)
 """
 
+import os
 import torch
 import hashlib
 import logging
@@ -547,12 +548,12 @@ class TTSManager:
         self._fish_speech_checkpoint_dir = checkpoint_dir
 
         # Load the main transformer model
-        print("Loading Fish Speech S2 Pro model...")
+        print("[FISH SPEECH] Loading S2 Pro model (Triton/Inductor caching active)...")
         model, decode_one_token = init_model(
             checkpoint_path=checkpoint_dir,
             device=device,
             precision=dtype,
-            compile=False,
+            compile=True,  # Enable Triton/Inductor compilation
         )
         print(f"Fish Speech model loaded on {device}")
 
@@ -589,6 +590,7 @@ class TTSManager:
                                          temperature=0.9, top_p=0.9, top_k=30,
                                          repetition_penalty=1.05,
                                          max_new_tokens=0, chunk_length=300,
+                                         split_by_paragraph=False,
                                          progress_callback=None):
         """Generate speech using Fish Speech S2 Pro.
 
@@ -615,6 +617,7 @@ class TTSManager:
             seed = random.randint(0, 2147483647)
         set_seed(seed)
 
+        # Optimization: Calculate max_new_tokens based on text length to avoid VRAM leaks
         model, decode_one_token, codec = self.get_fish_speech()
         device = get_device()
 
@@ -634,44 +637,122 @@ class TTSManager:
         # Encode reference audio to VQ codes
         prompt_tokens = encode_audio(str(voice_sample_path), codec, device)
 
+        # Check cache status for UI feedback
+        cache_dir = os.environ.get("TRITON_CACHE_DIR", "models/.cache")
+        has_cache = False
+        try:
+            if os.path.exists(cache_dir) and any(os.scandir(cache_dir)):
+                has_cache = True
+        except: pass
+
+        cache_msg = "Using cached kernels..." if has_cache else "Creating kernel cache (slow first time)..."
         if progress_callback:
-            progress_callback(0.4, desc="Generating speech...")
+            progress_callback(0.1, desc=f"[FISH SPEECH] {cache_msg}")
+        
+        print(f"[FISH SPEECH] {cache_msg}")
 
-        # Generate via the long-form generator
-        all_codes = []
-        for response in generate_long(
-            model=model,
-            device=device,
-            decode_one_token=decode_one_token,
-            text=text,
-            num_samples=1,
-            max_new_tokens=max_new_tokens,
-            top_p=top_p,
-            top_k=top_k,
-            repetition_penalty=repetition_penalty,
-            temperature=temperature,
-            compile=False,
-            iterative_prompt=True,
-            chunk_length=chunk_length,
-            prompt_text=[ref_text] if ref_text else None,
-            prompt_tokens=[prompt_tokens] if ref_text else None,
-        ):
-            if response.action == "sample":
-                all_codes.append(response.codes)
-            elif response.action == "next":
-                break
+        paragraphs = [p.strip() for p in text.split('\n') if p.strip()]
 
-        if not all_codes:
-            raise RuntimeError("Fish Speech generation produced no output codes.")
+        if split_by_paragraph and len(paragraphs) > 1:
+            print(f"[FISH SPEECH] Splitting text into {len(paragraphs)} paragraphs (0.5s pause)...")
+            audio_segments = []
+            for idx, para in enumerate(paragraphs):
+                para_max = max_new_tokens
+                # Optimization: Calculate max_new_tokens based on paragraph length
+                if para_max <= 0:
+                    # Optimized heuristic: 1 token roughly maps to 1 character (multiplied by 1.5 to be safe) + 100 padding
+                    para_max = max(int(len(para) * 1.5) + 100, 128)
+                    print(f"[FISH SPEECH] Paragraph {idx+1}: Optimized max_tokens = {para_max}")
 
-        if progress_callback:
-            progress_callback(0.8, desc="Decoding audio...")
+                if progress_callback:
+                    progress_callback(0.4 + (0.4 * (idx / len(paragraphs))), desc=f"Generating paragraph {idx + 1}/{len(paragraphs)}...")
 
-        # Merge codes and decode to audio waveform
-        merged_codes = torch.cat(all_codes, dim=1)
-        audio_tensor = decode_to_audio(merged_codes.to(device), codec)
-        audio_np = audio_tensor.cpu().float().numpy()
-        sr = codec.sample_rate
+                para_codes = []
+                for response in generate_long(
+                    model=model,
+                    device=device,
+                    decode_one_token=decode_one_token,
+                    text=para,
+                    num_samples=1,
+                    max_new_tokens=para_max,
+                    top_k=top_k,
+                    repetition_penalty=repetition_penalty,
+                    temperature=temperature,
+                    compile=True,
+                    iterative_prompt=True,
+                    chunk_length=chunk_length,
+                    prompt_text=[ref_text] if ref_text else None,
+                    prompt_tokens=[prompt_tokens] if ref_text else None,
+                ):
+                    if response.action == "sample":
+                        para_codes.append(response.codes)
+                    elif response.action == "next":
+                        break
+                
+                if not para_codes:
+                    continue
+
+                merged_codes = torch.cat(para_codes, dim=1)
+                audio_tensor = decode_to_audio(merged_codes.to(device), codec)
+                audio_np = audio_tensor.cpu().float().numpy()
+                audio_segments.append(audio_np)
+                
+                if idx < len(paragraphs) - 1:
+                    # Add 0.5 second of silence
+                    silence = np.zeros(int(codec.sample_rate * 0.5), dtype=np.float32)
+                    audio_segments.append(silence)
+
+            if not audio_segments:
+                raise RuntimeError("Fish Speech generation produced no output codes.")
+
+            if progress_callback:
+                progress_callback(0.8, desc="Decoding audio...")
+
+            final_audio = np.concatenate(audio_segments)
+            return final_audio, codec.sample_rate
+
+        else:
+            if progress_callback:
+                progress_callback(0.4, desc="Generating speech...")
+
+            # Calculate global max_new_tokens if not splitting
+            if max_new_tokens <= 0:
+                max_new_tokens = max(int(len(text) * 1.5) + 100, 128)
+                print(f"[FISH SPEECH] Optimized max_new_tokens calculated: {max_new_tokens}")
+
+            all_codes = []
+            for response in generate_long(
+                model=model,
+                device=device,
+                decode_one_token=decode_one_token,
+                text=text,
+                num_samples=1,
+                max_new_tokens=max_new_tokens,
+                top_k=top_k,
+                repetition_penalty=repetition_penalty,
+                temperature=temperature,
+                compile=True, # Use compiled kernels
+                iterative_prompt=True,
+                chunk_length=chunk_length,
+                prompt_text=[ref_text] if ref_text else None,
+                prompt_tokens=[prompt_tokens] if ref_text else None,
+            ):
+                if response.action == "sample":
+                    all_codes.append(response.codes)
+                elif response.action == "next":
+                    break
+
+            if not all_codes:
+                raise RuntimeError("Fish Speech generation produced no output codes.")
+
+            if progress_callback:
+                progress_callback(0.8, desc="Decoding audio...")
+
+            # Merge codes and decode to audio waveform
+            merged_codes = torch.cat(all_codes, dim=1)
+            audio_tensor = decode_to_audio(merged_codes.to(device), codec)
+            audio_np = audio_tensor.cpu().float().numpy()
+            sr = codec.sample_rate
 
         return audio_np, sr
 
@@ -2567,6 +2648,7 @@ class TTSManager:
                 repetition_penalty=float(fp.get('repetition_penalty', 1.05)),
                 max_new_tokens=int(fp.get('max_new_tokens', 2048)),
                 chunk_length=int(fp.get('chunk_length', 1000)),
+                split_by_paragraph=bool(fp.get('split_by_paragraph', False)),
                 progress_callback=progress_callback,
             )
         else:

@@ -393,6 +393,7 @@ class VoiceCloneTool(Tool):
                                    cb_repetition_penalty=1.2, cb_top_p=1.0, cb_language="English",
                                    fs_temperature=0.9, fs_top_p=0.9, fs_top_k=30,
                                    fs_repetition_penalty=1.05, fs_max_new_tokens=0, fs_chunk_length=300,
+                                   split_paragraph=False,
                                    progress=gr.Progress()):
             """Generate audio using voice cloning via unified engine dispatch."""
             from modules.core_components.audio_utils import make_stem_from_text, resolve_output_stem
@@ -494,6 +495,7 @@ class VoiceCloneTool(Tool):
                     qwen_params=qwen_params, vv_params=vv_params,
                     lux_params=lux_params, cb_params=cb_params,
                     fs_params=fs_params,
+                    split_by_paragraph=split_paragraph,
                     prompt_items=prompt_items, user_config=_user_config,
                     progress_callback=progress,
                 )
@@ -809,6 +811,12 @@ class VoiceCloneTool(Tool):
                     )
 
                     audio_segments.append(audio_data)
+
+                    # Add 0.5 second of silence after each clip (except last one)
+                    if idx < total - 1:
+                        import numpy as np
+                        silence = np.zeros(int(sr * 0.5), dtype=np.float32)
+                        audio_segments.append(silence)
 
                     # Save individual clip with zero-padded number
                     clip_stem = f"{final_stem}_{clip_num:02d}"

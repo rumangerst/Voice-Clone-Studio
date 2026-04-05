@@ -53,6 +53,7 @@ emotions.json
 prompts.json
 Qwen/
 .hf_cache/
+modules/models/.cache/
 
 # Jupyter
 .ipynb_checkpoints/

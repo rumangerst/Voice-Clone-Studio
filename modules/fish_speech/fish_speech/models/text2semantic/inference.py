@@ -27,11 +27,24 @@ from fish_speech.conversation import Conversation, Message
 from fish_speech.tokenizer import IM_END_TOKEN
 
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
-torch._inductor.config.coordinate_descent_tuning = True
-torch._inductor.config.triton.unique_kernel_names = True
 
-if hasattr(torch._inductor.config, "fx_graph_cache"):
-    torch._inductor.config.fx_graph_cache = True
+# Triton Cache Configuration for Windows (Global Environment)
+try:
+    root_dir = Path(__file__).resolve().parents[4]
+    _triton_cache = root_dir / "models" / ".cache"
+    _triton_cache.mkdir(exist_ok=True, parents=True)
+    os.environ["TRITON_CACHE_DIR"] = str(_triton_cache.absolute())
+except Exception:
+    pass
+
+try:
+    import torch._inductor.config
+    torch._inductor.config.coordinate_descent_tuning = True
+    torch._inductor.config.triton.unique_kernel_names = True
+    if hasattr(torch._inductor.config, "fx_graph_cache"):
+        torch._inductor.config.fx_graph_cache = True
+except (ImportError, AttributeError):
+    pass
 
 
 from torch.nn.attention import SDPBackend, sdpa_kernel
