@@ -38,6 +38,19 @@ argbind>=0.3.7
 pyloudnorm
 julius
 ffmpy
+#Missing Fish Speech dependence on new / clean install
+flatten-dict
+importlib-resources
+tabulate
+randomname
+markdown2
+matplotlib
+torch-stoi
+pystoi
+ipython
+#for compilation speed-up
+triton-windows
+ninja
 
 # LuxTTS voice cloning (optional - install via setup script or manually)
 # Prerequisites (install in order before zipvoice):

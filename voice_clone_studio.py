@@ -21,6 +21,91 @@ import tempfile
 import time
 import logging
 
+# ============================================================================
+# RUNTIME PATCHES (Windows/Triton Compatibility)
+# ============================================================================
+
+def auto_patch_inductor():
+    """Apply safety patch for Triton/Inductor cluster_dims AttributeError in Windows dev builds."""
+    try:
+        import torch._inductor.runtime.triton_heuristics as th
+        patch_file = th.__file__
+        if not os.path.exists(patch_file):
+            return
+
+        with open(patch_file, 'r', encoding='utf-8') as f:
+            content = f.read()
+
+        # Target: direct attribute access that causes crashes in dev builds on Windows
+        # We replace them with safe getattr calls
+        modified = False
+        
+        # Replacement for num_ctas and cluster_dims in cta_args block
+        unpatched = '(binary.num_ctas, *binary.cluster_dims)'
+        patched = '(getattr(binary, "num_ctas", 1), *getattr(binary, "cluster_dims", getattr(binary, "clusterDims", (1, 1, 1))))'
+        if unpatched in content:
+            content = content.replace(unpatched, patched)
+            modified = True
+
+        unpatched_meta = '(binary.metadata.num_ctas, *binary.metadata.cluster_dims)'
+        patched_meta = '(getattr(binary.metadata, "num_ctas", 1), *getattr(binary.metadata, "cluster_dims", (1, 1, 1)))'
+        if unpatched_meta in content:
+            content = content.replace(unpatched_meta, patched_meta)
+            modified = True
+
+        if modified:
+            with open(patch_file, 'w', encoding='utf-8') as f:
+                f.write(content)
+            print(f"[SYSTEM] Triton/Inductor compatibility patch applied to {os.path.basename(patch_file)}")
+            
+    except Exception as e:
+        # Silently fail if not applicable or already patched
+        pass
+
+# Execute early patch
+auto_patch_inductor()
+
+# ============================================================================
+# TRITON & INDUCTOR CONFIGURATION (Windows)
+# ============================================================================
+
+# Set Triton cache directory to models/.cache
+# This speeds up startup once kernels are compiled
+_models_dir = Path(__file__).parent / "models"
+abs_cache_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "models", ".cache")
+os.makedirs(abs_cache_dir, exist_ok=True)
+
+# Inform the user about the persistent cache status
+cache_items = 0
+try:
+    cache_items = sum([len(dirs) for r, dirs, f in os.walk(abs_cache_dir)])
+except: pass
+
+if cache_items > 0:
+    print(f"[FISH SPEECH] Persistent cache found at models/.cache ({cache_items} optimized kernels).")
+    print(f"[FISH SPEECH] First generation will be fast by reusing these kernels.")
+else:
+    print(f"[FISH SPEECH] No existing kernel cache found at models/.cache.")
+    print(f"[FISH SPEECH] First generation will be slow as it creates the persistent cache.")
+
+os.environ["TRITON_CACHE_DIR"] = abs_cache_dir
+os.environ["TORCHINDUCTOR_CACHE_DIR"] = abs_cache_dir
+os.environ["TORCHINDUCTOR_FX_GRAPH_CACHE"] = "1"
+
+# Configure Torch Inductor for Windows performance and persistence
+try:
+    import torch._inductor.config as inductor_config
+    # Enable all caching and persistence mechanisms
+    inductor_config.fx_graph_cache = True
+    inductor_config.autotune_local_cache = True
+    inductor_config.triton.autotune_at_compile_time = True
+    # Maintain stability on Windows
+    inductor_config.triton.unique_kernel_names = True
+    # Avoid "c long" (int64) indexing overhead where 32-bit suffices
+    inductor_config.force_bit32_indexing = True
+except Exception:
+    pass
+
 # Suppress Gradio's noisy HTTP request logs
 logging.getLogger("httpx").setLevel(logging.WARNING)
 logging.getLogger("httpcore").setLevel(logging.WARNING)
