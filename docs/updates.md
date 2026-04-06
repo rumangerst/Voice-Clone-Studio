@@ -1,5 +1,18 @@
 # Version History
 
+## April 5, 2026
+
+#### Version 1.12.5 - Fish Speech Compilation Speed-Up & Stability
+
+**Triton/Inductor Compilation (thanks to [Mixomo](https://github.com/Mixomo))**
+- **Compiled Kernel Caching** - Fish Speech now uses Triton/Inductor compilation with persistent caching in `models/.cache`, dramatically speeding up repeat generations
+- **Windows Compatibility Patches** - Automatic runtime patching of `torch._inductor` to fix `cluster_dims` AttributeError crashes with triton-windows
+- **First-Run Cache Warning** - Clear console message displayed just before the first generation to inform users that kernel compilation is a one-time process that may take several minutes
+- **Persistent Cache Detection** - Startup reports compiled kernel count when cache exists; skips warning on subsequent launches
+
+**Dependencies**
+- **triton-windows** - Added `triton-windows` and `ninja` packages for GPU kernel compilation on Windows
+
 ## April 3, 2026
 
 #### Version 1.12.0 - Fish Speech S2 Pro Integration

@@ -50,7 +50,7 @@ torch-stoi
 pystoi
 ipython
 #for compilation speed-up
-triton-windows
+triton-windows; sys_platform == 'win32'
 ninja
 
 # LuxTTS voice cloning (optional - install via setup script or manually)

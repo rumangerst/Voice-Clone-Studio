@@ -637,19 +637,29 @@ class TTSManager:
         # Encode reference audio to VQ codes
         prompt_tokens = encode_audio(str(voice_sample_path), codec, device)
 
-        # Check cache status for UI feedback
-        cache_dir = os.environ.get("TRITON_CACHE_DIR", "models/.cache")
-        has_cache = False
-        try:
-            if os.path.exists(cache_dir) and any(os.scandir(cache_dir)):
-                has_cache = True
-        except: pass
+        # Use startup cache check result (set in voice_clone_studio.py)
+        has_cache = os.environ.get("FISH_SPEECH_CACHE_READY", "0") == "1"
 
-        cache_msg = "Using cached kernels..." if has_cache else "Creating kernel cache (slow first time)..."
-        if progress_callback:
-            progress_callback(0.1, desc=f"[FISH SPEECH] {cache_msg}")
-        
-        print(f"[FISH SPEECH] {cache_msg}")
+        def _print_cache_status():
+            """Print cache status message once, right before first generation call."""
+            if _print_cache_status._done:
+                return
+            _print_cache_status._done = True
+            if has_cache:
+                if progress_callback:
+                    progress_callback(0.3, desc="Using cached kernels...")
+                print("[FISH SPEECH] Using cached kernels...")
+            else:
+                if progress_callback:
+                    progress_callback(0.3, desc="Compiling GPU kernels (one-time process, may take several minutes)...")
+                print("")
+                print("[FISH SPEECH] " + "=" * 60)
+                print("[FISH SPEECH] Building kernel cache for the first time.")
+                print("[FISH SPEECH] This may take several minutes - please be patient.")
+                print("[FISH SPEECH] Future generations will be much faster.")
+                print("[FISH SPEECH] " + "=" * 60)
+                print("")
+        _print_cache_status._done = False
 
         paragraphs = [p.strip() for p in text.split('\n') if p.strip()]
 
@@ -662,11 +672,12 @@ class TTSManager:
                 if para_max <= 0:
                     # Optimized heuristic: 1 token roughly maps to 1 character (multiplied by 1.5 to be safe) + 100 padding
                     para_max = max(int(len(para) * 1.5) + 100, 128)
-                    print(f"[FISH SPEECH] Paragraph {idx+1}: Optimized max_tokens = {para_max}")
+                    print(f"[FISH SPEECH] Paragraph {idx + 1}: Optimized max_tokens = {para_max}")
 
                 if progress_callback:
                     progress_callback(0.4 + (0.4 * (idx / len(paragraphs))), desc=f"Generating paragraph {idx + 1}/{len(paragraphs)}...")
 
+                _print_cache_status()
                 para_codes = []
                 for response in generate_long(
                     model=model,
@@ -688,7 +699,7 @@ class TTSManager:
                         para_codes.append(response.codes)
                     elif response.action == "next":
                         break
-                
+
                 if not para_codes:
                     continue
 
@@ -696,7 +707,7 @@ class TTSManager:
                 audio_tensor = decode_to_audio(merged_codes.to(device), codec)
                 audio_np = audio_tensor.cpu().float().numpy()
                 audio_segments.append(audio_np)
-                
+
                 if idx < len(paragraphs) - 1:
                     # Add 0.5 second of silence
                     silence = np.zeros(int(codec.sample_rate * 0.5), dtype=np.float32)
@@ -720,6 +731,7 @@ class TTSManager:
                 max_new_tokens = max(int(len(text) * 1.5) + 100, 128)
                 print(f"[FISH SPEECH] Optimized max_new_tokens calculated: {max_new_tokens}")
 
+            _print_cache_status()
             all_codes = []
             for response in generate_long(
                 model=model,
@@ -731,7 +743,7 @@ class TTSManager:
                 top_k=top_k,
                 repetition_penalty=repetition_penalty,
                 temperature=temperature,
-                compile=True, # Use compiled kernels
+                compile=True,  # Use compiled kernels
                 iterative_prompt=True,
                 chunk_length=chunk_length,
                 prompt_text=[ref_text] if ref_text else None,
