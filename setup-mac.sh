@@ -140,10 +140,10 @@ echo ""
 
 # Install requirements (skip GPU-specific packages)
 echo "Installing dependencies..."
-if [ -f "requirements.txt" ]; then
+if [ -f "requirements_linux.txt" ]; then
     # Install requirements but skip packages that don't work on macOS
     # onnxruntime-gpu is CUDA-only, deepfilternet may have issues
-    pip install -r requirements.txt --no-deps 2>/dev/null || true
+    pip install -r requirements_linux.txt --no-deps 2>/dev/null || true
 
     # Install core packages explicitly (skip problematic ones)
     pip install qwen-tts librosa torchaudio soundfile sox einops huggingface_hub
@@ -196,7 +196,7 @@ if [ -f "requirements.txt" ]; then
         echo "Audio denoising will not be available."
     fi
 else
-    echo "ERROR: requirements.txt not found!"
+    echo "ERROR: requirements_linux.txt not found!"
     exit 1
 fi
 

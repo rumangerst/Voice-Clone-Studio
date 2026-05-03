@@ -1,5 +1,12 @@
 # Version History
 
+## May 2, 2026
+
+#### Version 1.12.6 - Limited Windows Venv to specific packages.
+- Recent package updates seem to have broken things.  
+- So Windows requirement install a very specific version of packages to help fix this.
+- Also To help with the balance, everything installs by default, as the app was designed this way.
+
 ## April 5, 2026
 
 #### Version 1.12.5 - Fish Speech Compilation Speed-Up & Stability

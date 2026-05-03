@@ -1,4 +1,5 @@
 # Voice Clone Studio - Universal Requirements
+
 # Supports Windows, Linux, and macOS with platform-specific packages
 
 # Core TTS and audio processing dependencies (all platforms)
@@ -50,7 +51,6 @@ torch-stoi
 pystoi
 ipython
 #for compilation speed-up
-triton-windows; sys_platform == 'win32'
 ninja
 
 # LuxTTS voice cloning (optional - install via setup script or manually)

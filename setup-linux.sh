@@ -111,11 +111,11 @@ pip install torch==2.9.1 torchaudio==2.9.1 torchvision==0.24.1 --index-url https
 
 # Install dependencies
 echo ""
-echo "Installing dependencies (using requirements.txt)..."
-if [ -f "requirements.txt" ]; then
-    pip install -r requirements.txt
+echo "Installing dependencies (using requirements_linux.txt)..."
+if [ -f "requirements_linux.txt" ]; then
+    pip install -r requirements_linux.txt
 else
-    echo "⚠️  requirements.txt not found!"
+    echo "⚠️  requirements_linux.txt not found!"
     exit 1
 fi
 

@@ -8,7 +8,7 @@ echo   1. CUDA 13.0 (latest, for newest GPUs - DEFAULT)
 echo   2. CUDA 12.8 (for newer GPUs)
 echo   3. CUDA 12.1 (for older GPUs, GTX 10-series and newer)
 echo.
-choice /C 123 /T 10 /D 1 /M "Enter choice"
+choice /C 123 /T 99 /D 1 /M "Enter choice"
 set CUDA_CHOICE=%errorlevel%
 echo.
 
@@ -18,10 +18,10 @@ echo LuxTTS provides fast, high-quality voice cloning at 48kHz.
 echo Requires ~1GB disk space for model files.
 echo ========================================
 echo.
-echo   1. Yes - Install LuxTTS support
-echo   2. No  - Skip (DEFAULT)
+echo   1. Yes - Install LuxTTS support (DEFAULT)
+echo   2. No  - Skip
 echo.
-choice /C 12 /T 15 /D 2 /M "Install LuxTTS?"
+choice /C 12 /T 99 /D 1 /M "Install LuxTTS?"
 set LUXTTS_CHOICE=%errorlevel%
 echo.
 
@@ -33,10 +33,10 @@ echo Supports 52 languages with Small (0.6B) and Large (1.7B) models.
 echo Note: This will update transformers to 4.57.6+
 echo ========================================
 echo.
-echo   1. Yes - Install Qwen3 ASR support
-echo   2. No  - Skip (DEFAULT)
+echo   1. Yes - Install Qwen3 ASR support (DEFAULT)
+echo   2. No  - Skip
 echo.
-choice /C 12 /T 15 /D 2 /M "Install Qwen3 ASR?"
+choice /C 12 /T 99 /D 1 /M "Install Qwen3 ASR?"
 set QWEN3ASR_CHOICE=%errorlevel%
 echo.
 
@@ -46,10 +46,10 @@ echo OpenAI Whisper is an alternative transcription engine.
 echo Supports automatic splitting of clips with no length limit.
 echo ========================================
 echo.
-echo   1. Yes - Install Whisper
-echo   2. No  - Skip (DEFAULT)
+echo   1. Yes - Install Whisper (DEFAULT)
+echo   2. No  - Skip
 echo.
-choice /C 12 /T 15 /D 2 /M "Install Whisper?"
+choice /C 12 /T 99 /D 1 /M "Install Whisper?"
 set WHISPER_CHOICE=%errorlevel%
 echo.
 
@@ -59,10 +59,10 @@ echo llama.cpp powers the Prompt Manager's local LLM feature.
 echo Lets you generate TTS and SFX prompts using Qwen3 models.
 echo ========================================
 echo.
-echo   1. Yes - Install llama.cpp
-echo   2. No  - Skip (DEFAULT)
+echo   1. Yes - Install llama.cpp (DEFAULT)
+echo   2. No  - Skip
 echo.
-choice /C 12 /T 15 /D 2 /M "Install llama.cpp?"
+choice /C 12 /T 99 /D 1 /M "Install llama.cpp?"
 set LLAMA_CHOICE=%errorlevel%
 echo.
 
@@ -72,24 +72,24 @@ echo Flash Attention 2 provides fast attention for supported models.
 echo Requires CUDA GPU. Cannot be used with multilingual Chatterbox.
 echo ========================================
 echo.
-echo   1. Yes - Install Flash Attention 2
-echo   2. No  - Skip (DEFAULT)
+echo   1. Yes - Install Flash Attention 2 (DEFAULT)
+echo   2. No  - Skip
 echo.
-choice /C 12 /T 15 /D 2 /M "Install Flash Attention 2?"
+choice /C 12 /T 99 /D 1 /M "Install Flash Attention 2?"
 set FLASH_CHOICE=%errorlevel%
 echo.
 echo All questions answered - installing now...
 echo.
 
-REM Check Python version - find a compatible version (3.10-3.12)
+REM Check Python version - find a compatible version (3.11)
 echo [1/7] Checking Python installation...
 set PYTHON_CMD=
 
 REM First try the py launcher to find a compatible version
 where py >nul 2>&1
 if %errorlevel% equ 0 (
-    REM Try 3.11 first (best compatibility), then 3.10, then 3.12
-    for %%V in (3.11 3.10 3.12) do (
+    REM Try 3.11 first (best compatibility), then 3.10
+    for %%V in (3.11 3.10) do (
         if not defined PYTHON_CMD (
             py -%%V --version >nul 2>&1
             if not errorlevel 1 (
@@ -108,7 +108,7 @@ if not defined PYTHON_CMD (
 )
 
 if not defined PYTHON_CMD (
-    echo ERROR: Python not found! Please install Python 3.10-3.12.
+    echo ERROR: Python not found! Please install Python 3.11.
     echo Download from: https://www.python.org/downloads/
     pause
     exit /b 1
@@ -121,20 +121,20 @@ for /f "tokens=1,2 delims=." %%a in ("%PYVER%") do (
     set PYMINOR=%%b
 )
 if not "%PYMAJOR%"=="3" (
-    echo ERROR: Python 3.10-3.12 is required. Detected: %PYVER%
+    echo ERROR: Python 3.10-3.11 is required. Detected: %PYVER%
     echo Download from: https://www.python.org/downloads/
     pause
     exit /b 1
 )
 if %PYMINOR% LSS 10 (
-    echo ERROR: Python 3.10-3.12 is required. Detected: Python %PYVER%
+    echo ERROR: Python 3.10-3.11 is required. Detected: Python %PYVER%
     echo Download from: https://www.python.org/downloads/
     pause
     exit /b 1
 )
 if %PYMINOR% GTR 12 (
-    echo ERROR: Python 3.13+ is not supported due to dependency conflicts.
-    echo Python 3.10, 3.11, or 3.12 was not found on your system.
+    echo ERROR: Python 3.12+ is not supported due to dependency conflicts.
+    echo Python 3.11, or 3.10 was not found on your system.
     echo Download from: https://www.python.org/downloads/
     pause
     exit /b 1
@@ -238,7 +238,7 @@ echo.
 
 REM Install requirements
 echo [6/7] Installing requirements...
-pip install -r requirements.txt
+pip install -r requirements_windows.txt
 if %errorlevel% neq 0 (
     echo ERROR: Failed to install requirements!
     pause
