@@ -53,6 +53,7 @@ from fish_speech.models.text2semantic.llama import (
     BaseTransformer,
     DualARTransformer,
     NaiveTransformer,
+    _cast_nonquantized_tensors,
 )
 
 
@@ -375,11 +376,48 @@ def generate(
     return seq
 
 
-def init_model(checkpoint_path, device, precision, compile=False):
-    model = DualARTransformer.from_pretrained(checkpoint_path, load_weights=True)
+def init_model(
+    checkpoint_path,
+    device,
+    precision,
+    compile=False,
+    max_seq_len: int | None = None,
+    bnb4: bool = False,
+    bnb4_compute_dtype: torch.dtype | None = None,
+):
+    model = DualARTransformer.from_pretrained(
+        checkpoint_path,
+        load_weights=True,
+        max_length=max_seq_len,
+        bnb4=bnb4,
+        bnb4_compute_dtype=bnb4_compute_dtype or precision,
+    )
 
-    model = model.to(device=device, dtype=precision)
+    if bnb4:
+        if getattr(model, "_bnb4_prequantized", False):
+            # Pre-quantized: move to device first, then carefully cast
+            # only non-quantized tensors (Params4bit must stay untouched).
+            model = model.to(device=device)
+            _cast_nonquantized_tensors(model, dtype=precision, device=device)
+        else:
+            # Not pre-quantized: .to(dtype) triggers BnB quantization,
+            # then move to device.
+            model = model.to(dtype=precision)
+            model = model.to(device=device)
+    else:
+        model = model.to(device=device, dtype=precision)
     logger.info(f"Restored model from checkpoint")
+
+    # [DEBUG] Diagnostic: verify tokenizer is attached after from_pretrained
+    _tkn = getattr(model, "tokenizer", None)
+    if _tkn is None:
+        logger.error(
+            "[DEBUG] model.tokenizer is None after from_pretrained! "
+            "This will cause AttributeError during inference. "
+            f"checkpoint_path={checkpoint_path}, bnb4={bnb4}"
+        )
+    else:
+        logger.info(f"[DEBUG] model.tokenizer loaded successfully: {_tkn}")
 
     if isinstance(model, DualARTransformer):
         decode_one_token = decode_one_token_ar

@@ -246,6 +246,134 @@ def _remap_fish_qwen3_omni_keys(weights: OrderedDict) -> OrderedDict:
     return new_weights
 
 
+def _convert_linear_layers_to_bnb4(
+    module: nn.Module,
+    compute_dtype: torch.dtype = torch.float16,
+) -> None:
+    """Recursively replace all nn.Linear layers with bnb.nn.Linear4bit (NF4,
+    double-quantization).  The original layer's weights are preserved via
+    load_state_dict so that BnB can quantize them on the next .to(dtype)."""
+    try:
+        import bitsandbytes as bnb
+    except ImportError as exc:
+        raise ImportError(
+            "bitsandbytes is required for bnb4 loading. "
+            "Install bitsandbytes to use this mode."
+        ) from exc
+
+    def _replace(parent: nn.Module) -> None:
+        for name, child in list(parent.named_children()):
+            if isinstance(child, nn.Linear):
+                quantized = bnb.nn.Linear4bit(
+                    child.in_features,
+                    child.out_features,
+                    bias=child.bias is not None,
+                    compute_dtype=compute_dtype,
+                    quant_type="nf4",
+                    compress_statistics=True,
+                )
+                quantized.load_state_dict(child.state_dict(), strict=False)
+                setattr(parent, name, quantized)
+            else:
+                _replace(child)
+
+    _replace(module)
+
+
+def _load_prequantized_bnb4_state_dict(
+    module: nn.Module,
+    state_dict: OrderedDict,
+) -> set[str]:
+    """Load pre-quantized NF4 checkpoint data (Params4bit) into the model's
+    Linear4bit layers.  Returns the set of model parameter keys that were
+    consumed from *state_dict*."""
+    try:
+        import bitsandbytes as bnb
+        from bitsandbytes.nn import Params4bit
+    except ImportError as exc:
+        raise ImportError(
+            "bitsandbytes is required for loading prequantized bnb4 checkpoints."
+        ) from exc
+
+    consumed_model_keys = set()
+    consumed_state_keys = set()
+
+    for name, child in module.named_modules():
+        if not isinstance(child, bnb.nn.Linear4bit):
+            continue
+
+        prefix = f"{name}." if name else ""
+        weight_key = prefix + "weight"
+        quant_prefix = weight_key + "."
+        quantized_stats = {
+            k[len(quant_prefix):]: v
+            for k, v in state_dict.items()
+            if k.startswith(quant_prefix)
+        }
+        quantized_state_keys = [prefix + "weight." + key for key in quantized_stats]
+
+        if weight_key not in state_dict or not quantized_stats:
+            continue
+
+        child.weight = Params4bit.from_prequantized(
+            data=state_dict[weight_key],
+            quantized_stats=quantized_stats,
+            requires_grad=False,
+            device=child.weight.device,
+            module=child,
+        )
+        consumed_model_keys.add(weight_key)
+        consumed_state_keys.add(weight_key)
+        consumed_state_keys.update(quantized_state_keys)
+
+        bias_key = prefix + "bias"
+        if child.bias is not None and bias_key in state_dict:
+            child.bias.data.copy_(state_dict[bias_key].to(dtype=child.bias.dtype))
+            consumed_model_keys.add(bias_key)
+            consumed_state_keys.add(bias_key)
+
+    for key in consumed_state_keys:
+        state_dict.pop(key, None)
+
+    return consumed_model_keys
+
+
+def _cast_nonquantized_tensors(
+    model: nn.Module, dtype: torch.dtype, device: torch.device | str
+) -> None:
+    """For pre-quantized BnB4 models, cast only non-Params4bit tensors to the
+    target dtype/device, leaving quantized weights untouched."""
+    try:
+        import bitsandbytes as bnb
+    except ImportError as exc:
+        raise ImportError(
+            "bitsandbytes is required for bnb4 loading. "
+            "Install bitsandbytes to use this mode."
+        ) from exc
+
+    def _cast(module: nn.Module) -> None:
+        if isinstance(module, bnb.nn.Linear4bit):
+            # Only cast bias; the quantized weight stays as-is
+            if module.bias is not None:
+                module.bias.data = module.bias.data.to(device=device, dtype=dtype)
+            return
+
+        for name, param in module.named_parameters(recurse=False):
+            if param is None or not param.is_floating_point():
+                continue
+            param.data = param.data.to(device=device, dtype=dtype)
+
+        for name, buffer in module.named_buffers(recurse=False):
+            if buffer is None or not torch.is_floating_point(buffer):
+                continue
+            module._buffers[name] = buffer.to(device=device, dtype=dtype)
+
+        for child in module.children():
+            _cast(child)
+
+    _cast(model)
+
+
 class BaseTransformer(nn.Module):
     def __init__(
         self,
@@ -483,6 +611,8 @@ class BaseTransformer(nn.Module):
         max_length: int | None = None,
         lora_config: LoraConfig | None = None,
         rope_base: int | None = None,
+        bnb4: bool = False,
+        bnb4_compute_dtype: torch.dtype | None = None,
     ) -> "BaseTransformer":
         # Import wrapper locally to avoid circular dependency or global import issues
         from fish_speech.tokenizer import FishTokenizer
@@ -508,6 +638,14 @@ class BaseTransformer(nn.Module):
             logger.warning(
                 f"Failed to load tokenizer for config injection: {e}. Semantic IDs might be 0."
             )
+            # [DEBUG] Diagnostic log for tokenizer NoneType issue
+            import traceback as _tb
+            logger.error(
+                f"[DEBUG] Tokenizer loading failed for path='{path}'. "
+                f"This will cause AttributeError: 'NoneType' object has no attribute 'encode' "
+                f"during inference. Exception type: {type(e).__name__}, message: {e}"
+            )
+            logger.error(f"[DEBUG] Full traceback:\n{_tb.format_exc()}")
 
         match config.model_type:
             case "naive":
@@ -524,22 +662,42 @@ class BaseTransformer(nn.Module):
         )
         # Initialize model without passing tokenizer explicitly to __init__
         model = model_cls(config)
+        model._bnb4 = bnb4
+        model._bnb4_prequantized = False
         # Attach tokenizer to model instance for inference convenience (optional, but good for user scripts)
         model.tokenizer = tokenizer
+
+        path_obj = Path(path)
+        path_name = path_obj.name
+        use_legacy_int8 = "int8" in path_name
+        use_legacy_int4 = "int4" in path_name
+
+        if bnb4 and (use_legacy_int8 or use_legacy_int4):
+            raise ValueError(
+                "bnb4 loading expects an unquantized checkpoint directory, "
+                "not an int8/int4 checkpoint."
+            )
+
+        if bnb4:
+            logger.info("Using bitsandbytes NF4 4-bit quantization!")
+            _convert_linear_layers_to_bnb4(
+                model,
+                compute_dtype=bnb4_compute_dtype or torch.float16,
+            )
 
         if load_weights is False:
             logger.info("Randomly initialized model")
         else:
-            if "int8" in str(Path(path)):
+            if use_legacy_int8:
                 logger.info("Using int8 weight-only quantization!")
                 from tools.llama.quantize import WeightOnlyInt8QuantHandler
 
                 simple_quantizer = WeightOnlyInt8QuantHandler(model)
                 model = simple_quantizer.convert_for_runtime()
 
-            if "int4" in str(Path(path)):
+            if use_legacy_int4:
                 logger.info("Using int4 quantization!")
-                path_comps = path.name.split("-")
+                path_comps = path_name.split("-")
                 assert path_comps[-2].startswith("g")
                 groupsize = int(path_comps[-2][1:])
                 from tools.llama.quantize import WeightOnlyInt4QuantHandler
@@ -547,12 +705,28 @@ class BaseTransformer(nn.Module):
                 simple_quantizer = WeightOnlyInt4QuantHandler(model, groupsize)
                 model = simple_quantizer.convert_for_runtime()
 
-            path_obj = Path(path)
             index_json = path_obj / "model.safetensors.index.json"
             single_st = path_obj / "model.safetensors"
             pth_file = path_obj / "model.pth"
+            prefer_pth = (use_legacy_int8 or use_legacy_int4) and pth_file.exists()
 
-            if index_json.exists():
+            if prefer_pth:
+                weights = torch.load(
+                    pth_file,
+                    map_location="cpu",
+                    mmap=True,
+                    weights_only=True,
+                )
+                if "state_dict" in weights:
+                    weights = weights["state_dict"]
+                if weights and next(iter(weights.keys())).startswith("model."):
+                    weights = OrderedDict(
+                        (k.replace("model.", ""), v) for k, v in weights.items()
+                    )
+                for k in list(weights.keys()):
+                    if "audio_" in k:
+                        weights.pop(k)
+            elif index_json.exists():
                 logger.info("Loading sharded safetensors weights")
                 from safetensors.torch import load_file as st_load_file
 
@@ -588,7 +762,26 @@ class BaseTransformer(nn.Module):
             else:
                 raise FileNotFoundError(f"No model weights found in {path_obj}")
 
-            err = model.load_state_dict(weights, strict=False, assign=True)
+            prequantized_bnb4_keys = set()
+            if bnb4:
+                prequantized_bnb4_keys = _load_prequantized_bnb4_state_dict(
+                    model, weights
+                )
+                model._bnb4_prequantized = bool(prequantized_bnb4_keys)
+
+            load_kwargs = {"strict": False}
+            if not bnb4:
+                load_kwargs["assign"] = True
+            err = model.load_state_dict(weights, **load_kwargs)
+
+            if prequantized_bnb4_keys:
+                filtered_missing = [
+                    key for key in err.missing_keys if key not in prequantized_bnb4_keys
+                ]
+                err = nn.modules.module._IncompatibleKeys(
+                    filtered_missing, err.unexpected_keys
+                )
+
             logger.info(f"Model weights loaded - Status: {err}")
 
         if lora_config is not None:
@@ -609,6 +802,13 @@ class BaseTransformer(nn.Module):
                 if "lora" not in key:
                     continue
                 state_dict.pop(key)
+
+        # Ensure all values are moved to CPU; Params4bit data is
+        # serialised through its own __reduce__ so torch.save handles it.
+        state_dict = {
+            key: value.detach().cpu() if torch.is_tensor(value) else value
+            for key, value in state_dict.items()
+        }
 
         torch.save(state_dict, path / "model.pth")
         if hasattr(self, "tokenizer"):

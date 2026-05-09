@@ -73,6 +73,7 @@ VOICE_CLONE_OPTIONS = [
     "Chatterbox - Default",
     "Chatterbox - Multilingual",
     "Fish Speech - S2 Pro",
+    "Fish Speech - S2 Pro (int4)",
 ]
 
 # Default to Large models for better quality (static fallback)
@@ -107,7 +108,7 @@ TTS_ENGINES = {
     },
     "FishSpeech": {
         "label": "Fish Speech S2",
-        "choices": ["Fish Speech - S2 Pro"],
+        "choices": ["Fish Speech - S2 Pro", "Fish Speech - S2 Pro (int4)"],
         "default_enabled": True,
         "import_check": ("fish_speech.models.text2semantic.inference", "init_model"),
     },
@@ -361,6 +362,7 @@ SUPPORTED_MODELS = {
     "vibevoice-streaming-0.5b",
     # Fish Speech models
     "fish-speech-s2-pro",
+    "fish-speech-s2-pro-int4",
 }
 
 # ============================================================================
@@ -504,6 +506,23 @@ FISH_SPEECH_GENERATION_DEFAULTS = {
     "max_new_tokens": 0,  # 0 = auto (model max length)
     "chunk_length": 300,
 }
+
+# Fish Speech S2 Pro (int4) Generation Defaults — lower chunk_length for constrained VRAM
+FISH_SPEECH_INT4_GENERATION_DEFAULTS = {
+    "temperature": 0.9,
+    "top_p": 0.9,
+    "top_k": 30,
+    "repetition_penalty": 1.1,
+    "max_new_tokens": 0,  # 0 = auto (model max length)
+    "chunk_length": 200,
+}
+
+# Fish Speech int4 KV-cache sequence length limit
+FISH_SPEECH_INT4_MAX_SEQ_LEN = 4096
+
+# Fish Speech model repo IDs
+FISH_SPEECH_REPO = "fishaudio/s2-pro"
+FISH_SPEECH_INT4_REPO = "groxaxo/s2-pro"
 
 # Fish Speech audio sample rate (determined by DAC codec, typically 24kHz)
 FISH_SPEECH_SAMPLE_RATE = 24000

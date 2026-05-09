@@ -512,7 +512,7 @@ class VoiceCloneTool(Tool):
                     'vibevoice': f"VibeVoice-{model_size}",
                     'luxtts': "LuxTTS",
                     'chatterbox': "Chatterbox Multilingual" if model_size == "Multilingual" else "Chatterbox",
-                    'fish_speech': "Fish Speech S2 Pro",
+                    'fish_speech': f"Fish Speech S2 {model_size}",
                 }
                 engine_display = engine_display_map.get(engine, model_selection)
 
@@ -784,7 +784,7 @@ class VoiceCloneTool(Tool):
                 elif engine == "chatterbox":
                     progress(0.05, desc="Loading Chatterbox model...")
                 elif engine == "fish_speech":
-                    progress(0.05, desc="Loading Fish Speech S2 Pro model...")
+                    progress(0.05, desc=f"Loading Fish Speech S2 {model_size} model...")
 
                 output_format = _user_config.get("output_format", "wav")
                 manual_save = _user_config.get("manual_save", False)

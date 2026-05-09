@@ -212,6 +212,9 @@ class SettingsTool(Tool):
                                         "Chatterbox",
                                         "--- LuxTTS ---",
                                         "LuxTTS",
+                                        "--- Fish Speech ---",
+                                        "Fish Speech S2 Pro",
+                                        "Fish Speech S2 Pro (int4)",
                                     ],
                                     value="Qwen3-TTS-12Hz-0.6B-Base"
                                 )
@@ -230,6 +233,8 @@ class SettingsTool(Tool):
                                     "VibeVoice-ASR": "microsoft/VibeVoice-ASR",
                                     "Chatterbox": "ResembleAI/chatterbox",
                                     "LuxTTS": "YatharthS/LuxTTS",
+                                    "Fish Speech S2 Pro": "fishaudio/s2-pro",
+                                    "Fish Speech S2 Pro (int4)": "groxaxo/s2-pro",
                                 }
 
                             with gr.Column():

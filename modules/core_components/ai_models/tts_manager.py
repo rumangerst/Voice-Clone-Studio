@@ -86,6 +86,7 @@ class TTSManager:
         self._fish_speech_codec = None
         self._fish_speech_decode_one_token = None
         self._fish_speech_checkpoint_dir = None
+        self._fish_speech_variant = None  # "Pro" or "Pro (int4)"
 
         # Prompt cache
         self._voice_prompt_cache = {}
@@ -497,22 +498,38 @@ class TTSManager:
 
         return self._luxtts_model
 
-    def get_fish_speech(self):
+    def get_fish_speech(self, variant="Pro"):
         """Load Fish Speech S2 Pro model and DAC codec.
 
         Downloads the model from HuggingFace on first use. Subsequent calls
         return cached instances. Respects offline_mode config.
 
+        Args:
+            variant: Model variant - "Pro" for full-precision or "Pro (int4)" for
+                     BnB4 quantized model (lower VRAM usage).
+
         Returns:
             Tuple of (model, decode_one_token, codec)
         """
-        if self._fish_speech_model is not None:
+        # If already loaded with the correct variant, return cached instance
+        if self._fish_speech_model is not None and self._fish_speech_variant == variant:
             return self._fish_speech_model, self._fish_speech_decode_one_token, self._fish_speech_codec
 
+        # If a different variant is loaded, unload it first
+        if self._fish_speech_model is not None and self._fish_speech_variant != variant:
+            print(f"Switching Fish Speech variant from '{self._fish_speech_variant}' to '{variant}' - unloading...")
+            self._unload_fish_speech()
+
+        # Use "fish_speech" as model_id so _check_and_unload_if_different handles
+        # cross-engine switches. Variant-specific unloading is handled above.
         self._check_and_unload_if_different("fish_speech")
 
         import sys
         from pathlib import Path as _Path
+
+        from modules.core_components.constants import (
+            FISH_SPEECH_REPO, FISH_SPEECH_INT4_REPO, FISH_SPEECH_INT4_MAX_SEQ_LEN,
+        )
 
         # Add vendored fish_speech to sys.path so 'from fish_speech.xxx' resolves
         fish_speech_vendor_dir = str(_Path(__file__).parent.parent.parent / "fish_speech")
@@ -526,9 +543,12 @@ class TTSManager:
         device = get_device()
         dtype = get_dtype()
 
+        # Select repo and loading parameters based on variant
+        is_int4 = variant == "Pro (int4)"
+        repo_id = FISH_SPEECH_INT4_REPO if is_int4 else FISH_SPEECH_REPO
+
         # Download or locate model via huggingface_hub
         offline_mode = self.user_config.get("offline_mode", False)
-        repo_id = "fishaudio/s2-pro"
 
         local_path = check_model_available_locally(repo_id)
         if local_path:
@@ -541,21 +561,82 @@ class TTSManager:
             )
         else:
             from huggingface_hub import snapshot_download
-            print(f"Downloading Fish Speech S2 Pro model (~8 GB): {repo_id}")
+            size_label = "~3 GB (int4)" if is_int4 else "~8 GB"
+            print(f"Downloading Fish Speech S2 Pro{' (int4)' if is_int4 else ''} model ({size_label}): {repo_id}")
             checkpoint_dir = snapshot_download(repo_id=repo_id)
             print(f"Fish Speech model downloaded to: {checkpoint_dir}")
 
         self._fish_speech_checkpoint_dir = checkpoint_dir
 
         # Load the main transformer model
-        print("[FISH SPEECH] Loading S2 Pro model (Triton/Inductor caching active)...")
-        model, decode_one_token = init_model(
-            checkpoint_path=checkpoint_dir,
-            device=device,
-            precision=dtype,
-            compile=True,  # Enable Triton/Inductor compilation
-        )
-        print(f"Fish Speech model loaded on {device}")
+        if is_int4:
+            # int4 variant: load with BnB4 quantization, fp16 compute, limited KV-cache
+            try:
+                import bitsandbytes  # noqa: F401
+            except ImportError:
+                raise ImportError(
+                    "bitsandbytes is required for Fish Speech int4 variant. "
+                    "Install with: pip install bitsandbytes"
+                )
+            print("[FISH SPEECH] Loading S2 Pro (int4) model (BnB4 quantization, Triton/Inductor caching active)...")
+            model, decode_one_token = init_model(
+                checkpoint_path=checkpoint_dir,
+                device=device,
+                precision=torch.float16,  # fp16 compute dtype for consumer GPUs
+                compile=True,
+                bnb4=True,
+                bnb4_compute_dtype=torch.float16,
+                max_seq_len=FISH_SPEECH_INT4_MAX_SEQ_LEN,
+            )
+        else:
+            print("[FISH SPEECH] Loading S2 Pro model (Triton/Inductor caching active)...")
+            model, decode_one_token = init_model(
+                checkpoint_path=checkpoint_dir,
+                device=device,
+                precision=dtype,
+                compile=True,  # Enable Triton/Inductor compilation
+            )
+        print(f"Fish Speech model ({variant}) loaded on {device}")
+
+        # Fallback: if the int4 model repo lacks tokenizer files,
+        # model.tokenizer will be None (from_pretrained silently catches
+        # the error).  The tokenizer is required for inference (encoding
+        # text, visualizing, etc.), so load it from the original repo.
+        if getattr(model, "tokenizer", None) is None:
+            print("[FISH SPEECH] Tokenizer missing from checkpoint — loading from original repo as fallback...")
+            from fish_speech.tokenizer import FishTokenizer
+
+            tokenizer_fallback_repo = FISH_SPEECH_REPO  # fishaudio/s2-pro
+            tokenizer_local = check_model_available_locally(tokenizer_fallback_repo)
+            if tokenizer_local:
+                tokenizer_path = str(tokenizer_local)
+            elif not offline_mode:
+                from huggingface_hub import snapshot_download
+                # Download only tokenizer files (small ~2 MB) — not the full model
+                tokenizer_path = snapshot_download(
+                    repo_id=tokenizer_fallback_repo,
+                    allow_patterns=["tokenizer*", "special_tokens_map.json", "tokenization*"],
+                )
+            else:
+                raise RuntimeError(
+                    "Fish Speech tokenizer is missing and offline mode is enabled. "
+                    "The tokenizer is required for inference. Download the model first "
+                    "or disable offline mode in Settings."
+                )
+
+            try:
+                model.tokenizer = FishTokenizer.from_pretrained(tokenizer_path)
+                # Re-inject semantic IDs into config from the loaded tokenizer
+                model.config.semantic_begin_id = model.tokenizer.semantic_begin_id
+                model.config.semantic_end_id = model.tokenizer.semantic_end_id
+                print(f"[FISH SPEECH] Fallback tokenizer loaded (semantic IDs: "
+                      f"{model.config.semantic_begin_id}-{model.config.semantic_end_id})")
+            except Exception as e:
+                raise RuntimeError(
+                    f"Failed to load Fish Speech tokenizer from fallback repo "
+                    f"'{tokenizer_fallback_repo}': {e}. "
+                    f"The tokenizer is required for inference."
+                ) from e
 
         # Load the DAC codec for audio encoding/decoding
         codec_path = _Path(checkpoint_dir) / "codec.pth"
@@ -581,9 +662,30 @@ class TTSManager:
         self._fish_speech_model = model
         self._fish_speech_decode_one_token = decode_one_token
         self._fish_speech_codec = codec
+        self._fish_speech_variant = variant
 
         log_gpu_memory("After Fish Speech load")
         return model, decode_one_token, codec
+
+    def _unload_fish_speech(self):
+        """Unload Fish Speech model, codec, and reset variant state."""
+        freed = []
+        if self._fish_speech_model is not None:
+            del self._fish_speech_model
+            self._fish_speech_model = None
+            freed.append("Fish Speech Model")
+        if self._fish_speech_codec is not None:
+            del self._fish_speech_codec
+            self._fish_speech_codec = None
+            freed.append("Fish Speech Codec")
+        if self._fish_speech_decode_one_token is not None:
+            self._fish_speech_decode_one_token = None
+        self._fish_speech_checkpoint_dir = None
+        self._fish_speech_variant = None
+        if freed:
+            gc.collect()
+            empty_device_cache()
+            print(f"Unloaded Fish Speech: {', '.join(freed)}")
 
     def generate_voice_clone_fish_speech(self, text, voice_sample_path,
                                          ref_text="", seed=-1,
@@ -591,7 +693,8 @@ class TTSManager:
                                          repetition_penalty=1.05,
                                          max_new_tokens=0, chunk_length=300,
                                          split_by_paragraph=False,
-                                         progress_callback=None):
+                                         progress_callback=None,
+                                         variant="Pro"):
         """Generate speech using Fish Speech S2 Pro.
 
         Args:
@@ -606,9 +709,11 @@ class TTSManager:
             max_new_tokens: Max tokens to generate (0=auto)
             chunk_length: Bytes per batch for generate_long
             progress_callback: Optional Gradio progress callback
+            variant: Model variant - "Pro" or "Pro (int4)"
 
         Returns:
             Tuple of (audio_numpy_array, sample_rate)
+
         """
         import random
         import numpy as np
@@ -618,7 +723,7 @@ class TTSManager:
         set_seed(seed)
 
         # Optimization: Calculate max_new_tokens based on text length to avoid VRAM leaks
-        model, decode_one_token, codec = self.get_fish_speech()
+        model, decode_one_token, codec = self.get_fish_speech(variant=variant)
         device = get_device()
 
         import sys
@@ -826,6 +931,7 @@ class TTSManager:
             self._fish_speech_decode_one_token = None
 
         self._fish_speech_checkpoint_dir = None
+        self._fish_speech_variant = None
 
         if self._trained_model is not None:
             del self._trained_model
@@ -2524,6 +2630,8 @@ class TTSManager:
             Tuple of (engine, model_size) e.g. ('qwen', '0.6B')
         """
         if "Fish Speech" in model_selection:
+            if "int4" in model_selection:
+                return "fish_speech", "Pro (int4)"
             return "fish_speech", "Pro"
         elif "LuxTTS" in model_selection:
             return "luxtts", "Default"
@@ -2650,18 +2758,25 @@ class TTSManager:
                     top_p=float(cp.get('top_p', 1.0)),
                 )
         elif engine == "fish_speech":
+            from modules.core_components.constants import (
+                FISH_SPEECH_GENERATION_DEFAULTS, FISH_SPEECH_INT4_GENERATION_DEFAULTS,
+            )
             fp = kwargs.get('fs_params', {})
+            # Select defaults based on variant
+            is_int4 = model_size == "Pro (int4)"
+            defaults = FISH_SPEECH_INT4_GENERATION_DEFAULTS if is_int4 else FISH_SPEECH_GENERATION_DEFAULTS
             return self.generate_voice_clone_fish_speech(
                 text=text, voice_sample_path=sample_wav_path,
                 ref_text=sample_ref_text, seed=seed,
-                temperature=float(fp.get('temperature', 0.9)),
-                top_p=float(fp.get('top_p', 0.9)),
-                top_k=int(fp.get('top_k', 30)),
-                repetition_penalty=float(fp.get('repetition_penalty', 1.05)),
-                max_new_tokens=int(fp.get('max_new_tokens', 2048)),
-                chunk_length=int(fp.get('chunk_length', 1000)),
+                temperature=float(fp.get('temperature', defaults['temperature'])),
+                top_p=float(fp.get('top_p', defaults['top_p'])),
+                top_k=int(fp.get('top_k', defaults['top_k'])),
+                repetition_penalty=float(fp.get('repetition_penalty', defaults['repetition_penalty'])),
+                max_new_tokens=int(fp.get('max_new_tokens', defaults['max_new_tokens'])),
+                chunk_length=int(fp.get('chunk_length', defaults['chunk_length'])),
                 split_by_paragraph=bool(fp.get('split_by_paragraph', False)),
                 progress_callback=progress_callback,
+                variant=model_size,
             )
         else:
             raise ValueError(f"Unknown engine: {engine}")
